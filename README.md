@@ -295,7 +295,3 @@ src/
 - Testnet only — do not use real/mainnet mnemonics
 - Never commit `.env` or secrets
 - Private keys are derived in memory from `WALLET_MNEMONIC` when signing
-
-## License
-
-ISC
