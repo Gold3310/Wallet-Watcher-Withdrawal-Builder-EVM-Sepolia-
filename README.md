@@ -239,7 +239,7 @@ Example response (`broadcast: false`):
 
 After starting the service, copy addresses from `GET /wallets` and fund them using a Sepolia faucet, for example:
 
-- [Alchemy Sepolia Faucet](https://www.alchemy.com/faucets/ethereum-sepolia)
+- [POW Sepolia Faucet](https://sepolia-faucet.pk910.de/)
 - [Google Cloud Sepolia Faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia)
 
 The balance poller will detect deposits within the configured polling interval (default 2 minutes, well within the 10-minute requirement).
