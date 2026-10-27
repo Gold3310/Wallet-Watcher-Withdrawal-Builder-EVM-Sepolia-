@@ -8,7 +8,8 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Balance polling against Sepolia with persisted balances (SQLite)
 - Balance-change ledger (inflows from tracking, outflows only on broadcast)
 - REST API for wallet balances and withdrawals
-- Unit tests for wallet derivation and transaction building
+- ERC-7715 session permissions (grant, inspect, revoke, redeem) with expiry and spending policies
+- Unit tests for wallet derivation, transaction building and permissions
 
 ## Wallet derivation (BIP-39 / BIP-44)
 
@@ -159,6 +160,8 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
 | `PORT` | HTTP server port | `3000` |
 | `DATABASE_PATH` | SQLite database path | `./data/wallets.db` |
+| `PERMISSIONS_MAX_EXPIRY_SECONDS` | Longest accepted permission grant | `2592000` (30 days) |
+| `PERMISSIONS_DEFAULT_EXPIRY_SECONDS` | Grant expiry when a request omits it | `3600` (1 hour) |
 
 ## API
 
@@ -235,6 +238,211 @@ Example response (`broadcast: false`):
 }
 ```
 
+## Session permissions (ERC-7715)
+
+Beyond signing every withdrawal with the account key, the service can hand out
+**scoped, expiring permissions** using the same shape as the
+[`wallet_grantPermissions`](https://www.openfort.io/docs/products/cross-app-wallet/rpc/wallet_grantPermissions)
+RPC ([ERC-7715](https://github.com/ethereum/ERCs/blob/master/ERCS/erc-7715.md)).
+
+A grant registers a **session signer** on an account together with the
+permissions and policies that bound what it may do. The session key is derived
+per grant and is what authorises a redemption; the account key is what actually
+executes it.
+
+### How it works
+
+| Step | What happens |
+|------|--------------|
+| Grant | `POST /permissions` builds the `wallet_grantPermissions` request, derives a fresh session key, hashes the permissions, signs the grant digest with the account key, and persists the session |
+| Store | Only a random 32-byte seed is persisted. The session key is re-derived as `keccak256(accountKey ‖ seed)`, so a database leak alone yields nothing without the mnemonic |
+| Redeem | `POST /permissions/:id/redeem` checks status/expiry/policies, signs the action digest with the re-derived session key, verifies the signature recovers to the granted signer, then builds (and optionally broadcasts) the withdrawal with the account key |
+
+### Deviation from a full smart-account flow
+
+The accounts here are plain EOAs derived from the HD mnemonic, so there is no
+on-chain permission validator to redeem against. In a full ERC-7715 setup the
+session key signs a UserOperation and a smart account executes it; here the
+session key authorises and **this backend** executes, after enforcing the grant
+itself. The payloads, hashing and `permissionsContext` are otherwise faithful to
+the spec, so the grant can be handed to a wallet that speaks ERC-7715 (for
+example the Rapidfire ID sample wallet) unchanged.
+
+### Encoding
+
+Every field is hashed with a fixed layout so both sides can recompute it:
+
+```
+selector(signature)  = 4-byte selector, or keccak256(signature)[0:4]
+dataHash             = keccak256(abi.encode(address, keccak256(selectors)))
+policiesHash         = keccak256(concat(policyHash...))  |  0x00..00 when empty
+permissionHash       = keccak256(abi.encode(PERMISSION_TYPEHASH,
+                           keccak256(type), dataHash, policiesHash))
+permissionsHash      = keccak256(concat(permissionHash...))
+grantDigest          = keccak256(abi.encode(GRANT_TYPEHASH, account,
+                           signerHash, expiry, permissionsHash))
+permissionsContext   = 0x77150001 ++ abi.encode(account, signerHash,
+                           expiry, permissionsHash)
+```
+
+`0x77150001` is a 4-byte tag — ERC number `7715`, encoding version `1` — so a
+verifier can tell this context apart from any other opaque blob. Contexts are
+self-describing and can be decoded with `GET /permissions/context/:context`
+without trusting a `sessionId`.
+
+### Enforced policies
+
+| Policy | Data | Effect |
+|--------|------|--------|
+| `spending-cap` | `{ "limit": "<wei>" }` | Cumulative native value the session may move. The strictest cap across all granted permissions wins |
+| `value-limit` | `{ "limit": "<wei>" }` | Maximum native value in a single redemption |
+
+Other policy types are hashed into the permission (so they are faithfully
+recorded in the grant) but are not enforced by this backend.
+
+Only `native-token-transfer` permissions are executable today. ERC-20 / 721 /
+1155 and `contract-call` permissions can be granted — they are hashed, stored and
+returned — but redeeming them fails with a clear `400`.
+
+### API
+
+#### `POST /permissions`
+
+Request:
+
+```json
+{
+  "fromWalletIndex": 0,
+  "expiry": 604800,
+  "signerType": "key",
+  "permissions": [
+    {
+      "type": "contract-call",
+      "data": {
+        "address": "0x706aa5c8e5cc2c67da21ee220718f6f6b154e75c",
+        "calls": [{ "signature": "transfer(address,uint256)" }]
+      },
+      "policies": []
+    }
+  ]
+}
+```
+
+- `expiry` is a **duration in seconds** (as in the RPC). It is capped by
+  `PERMISSIONS_MAX_EXPIRY_SECONDS` and defaults to
+  `PERMISSIONS_DEFAULT_EXPIRY_SECONDS`.
+- `signerType` is optional (`key` by default) and `permissions` must be
+  non-empty.
+
+Response (`201`, abridged — `request.permissions` echoes the body above and
+`response.grantedPermissions` echoes that back) carries `request` (what a wallet
+would receive), `response` (what it would return — note the absolute `expiry`)
+and the stored `session`:
+
+```json
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "method": "wallet_grantPermissions",
+  "request": { "expiry": 604800, "signer": { "type": "key", "data": { "id": "0x..." } }, "permissions": [] },
+  "response": {
+    "expiry": 1761561600,
+    "grantedPermissions": [],
+    "permissionsContext": "0x77150001..."
+  },
+  "session": {
+    "id": 1,
+    "walletIndex": 0,
+    "account": "0x...",
+    "status": "active",
+    "expiresAt": "2026-10-27T15:00:00.000Z",
+    "remainingSeconds": 604800,
+    "spentWei": "0",
+    "remainingWei": null,
+    "nonce": 0
+  }
+}
+```
+
+#### `GET /permissions`
+
+Optional `?walletIndex=N` filter. Returns every session with a derived `status`
+of `active`, `expired` or `revoked`.
+
+#### `GET /permissions/:id`
+
+A single session.
+
+#### `GET /permissions/context/:context`
+
+Decodes a `permissionsContext` and reports whether it is `known` and `intact`
+(its embedded `permissionsHash` matches the stored grant).
+
+#### `POST /permissions/:id/revoke`
+
+Revokes a session. Revocation is terminal; later redemptions fail.
+
+#### `POST /permissions/:id/redeem`
+
+```json
+{
+  "toAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "amountWei": "10000000000000000",
+  "broadcast": true
+}
+```
+
+Checks the session, the permission type and the policies, then signs the action
+digest with the session key and builds the transfer with the account key.
+
+- `broadcast: false` (`200`) — authorisation only. Nothing is sent, and neither
+  the spending cap nor the action nonce is consumed.
+- `broadcast: true` (`201`) — sends the transaction, records the outflow ledger
+  entry, adds the amount to `spentWei` and increments the nonce.
+
+```json
+{
+  "broadcast": true,
+  "txHash": "0x...",
+  "authorization": {
+    "actionDigest": "0x...",
+    "nonce": 0,
+    "sessionKeySignature": "0x...",
+    "recoveredSigner": "0x..."
+  },
+  "transaction": { "...": "same shape as POST /withdrawals" },
+  "session": { "nonce": 1, "spentWei": "10000000000000000", "remainingWei": "40000000000000000" }
+}
+```
+
+### Demo walkthrough
+
+```bash
+# 1. Grant a session key that may move up to 0.05 ETH for a week
+curl -s -X POST http://localhost:3000/permissions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fromWalletIndex": 0,
+    "expiry": 604800,
+    "permissions": [{
+      "type": "native-token-transfer",
+      "data": {},
+      "policies": [{ "type": "spending-cap", "data": { "limit": "50000000000000000" } }]
+    }]
+  }'
+
+# 2. Redeem 0.01 ETH with that session key (no broadcast)
+curl -s -X POST http://localhost:3000/permissions/1/redeem \
+  -H "Content-Type: application/json" \
+  -d '{"toAddress":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8","amountWei":"10000000000000000","broadcast":false}'
+
+# 3. Inspect the remaining allowance
+curl -s http://localhost:3000/permissions/1
+
+# 4. Revoke it
+curl -s -X POST http://localhost:3000/permissions/1/revoke
+```
+
 ## Funding test wallets
 
 After starting the service, copy addresses from `GET /wallets` and fund them using a Sepolia faucet, for example:
@@ -271,11 +479,12 @@ src/
 │   ├── wallet/             # HD derivation
 │   ├── balance/            # Balance sync + wallet views
 │   ├── ledger/             # Outflow recording
+│   ├── permissions/        # ERC-7715 grant/redeem + encoding
 │   └── withdrawal/         # Tx build/sign/broadcast
 ├── infra/
 │   ├── db/                 # SQLite persistence
 │   └── rpc/                # ethers provider
-├── api/                    # Express routes
+├── api/                    # Express routes (wallets, withdrawals, permissions)
 ├── jobs/                   # Background balance poller
 └── index.ts                # Entry point
 ```
@@ -288,6 +497,9 @@ src/
 | SQLite | Zero-setup persistence suitable for a take-home demo |
 | Polling (2 min default) | Meets the 10-minute SLA with simpler ops than WebSocket subscriptions |
 | Re-derive keys at sign time | Private keys are not stored in the database |
+| Session key = KDF(account key, stored seed) | Session keys are re-derivable but a database leak alone is useless without the mnemonic |
+| Only `native-token-transfer` is redeemable | No ERC-20 validator or allowance plumbing on the EOA custody path |
+| Broadcast redemptions consume the cap | Build-only redemptions stay side-effect free |
 | No deposit aggregation | Out of assignment scope; documented behavior instead |
 
 ## Security notes
@@ -295,3 +507,8 @@ src/
 - Testnet only — do not use real/mainnet mnemonics
 - Never commit `.env` or secrets
 - Private keys are derived in memory from `WALLET_MNEMONIC` when signing
+- Permission sessions are enforced by this service, not by an on-chain
+  validator: revoking is a database flag, and policy checks happen at redemption
+  time. Treat the database as part of the trust boundary
+- `spending-cap` and `value-limit` bound **native** value only; they do not
+  constrain ERC-20 `transfer` amounts, which this backend does not execute

@@ -34,6 +34,13 @@ export const config = {
   walletCount: parseWalletCount(process.env.WALLET_COUNT),
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? "120000"),
   databasePath: process.env.DATABASE_PATH ?? "./data/wallets.db",
+  // Longest `expiry` (duration in seconds) a grant request may ask for.
+  permissionsMaxExpirySeconds: Number(
+    process.env.PERMISSIONS_MAX_EXPIRY_SECONDS ?? String(30 * 24 * 60 * 60),
+  ),
+  permissionsDefaultExpirySeconds: Number(
+    process.env.PERMISSIONS_DEFAULT_EXPIRY_SECONDS ?? String(60 * 60),
+  ),
   chainId: 11155111,
   network: "sepolia" as const,
   minWalletCount: MIN_WALLET_COUNT,

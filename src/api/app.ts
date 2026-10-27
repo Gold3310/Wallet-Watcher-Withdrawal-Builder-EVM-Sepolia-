@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from "express";
+import { permissionsRouter } from "./routes/permissions.js";
 import { walletsRouter } from "./routes/wallets.js";
 import { withdrawalsRouter } from "./routes/withdrawals.js";
 
@@ -11,6 +12,7 @@ export function createApp() {
     res.json({ status: "ok" });
   });
 
+  app.use("/permissions", permissionsRouter);
   app.use("/wallets", walletsRouter);
   app.use("/withdrawals", withdrawalsRouter);
 
@@ -22,7 +24,11 @@ export function createApp() {
         message.includes("must be") ||
         message.includes("invalid") ||
         message.includes("Insufficient") ||
-        message.includes("does not exist")
+        message.includes("does not exist") ||
+        message.includes("does not grant") ||
+        message.includes("expired") ||
+        message.includes("revoked") ||
+        message.includes("exceeds")
         ? 400
         : 500;
 
