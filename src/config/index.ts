@@ -347,4 +347,4 @@ if (!Number.isInteger(config.withdrawalWindowSeconds) || config.withdrawalWindow
 
 export const apiAuthRequired = config.apiTokens.size > 0;
 
-export const DERIVATION_PATH_PREFIX = "m/44'/60'/0'/0";
+export { DERIVATION_PATH_PREFIX } from "../domain/wallet/derivation.js";

@@ -788,6 +788,41 @@ holds one can act as that owner. If you want cryptographic proof of control
 instead, the next step is request signing — the owner signs each withdrawal with
 the address's key and the service verifies recovery before signing anything.
 
+## Deriving a wallet and saving its key
+
+```bash
+npm run wallet:derive -- --index 5
+```
+
+Derives wallet 5 from the mnemonic in your `.env` and writes its private key to
+`keys/wallet-5.json`.
+
+- Mode `0600`, inside a `0700` directory, under a path `.gitignore` covers. It
+  refuses to write anywhere git would pick up.
+- The key is never printed. Terminal output ends up in scrollback, CI logs and
+  shell history.
+- It refuses to overwrite an existing key file — overwriting a live key destroys
+  access to it.
+- The mnemonic is read from the environment, never from an argument, so it does
+  not land in shell history or `ps` output.
+- It warns when the index is at or above `WALLET_COUNT`, because the service
+  will not sign for a wallet it does not manage.
+
+### What this cannot do
+
+**You cannot derive a wallet from an address.** Derivation runs
+mnemonic → private key → address, in one direction only. Recovering a private
+key from an address is precisely what public-key cryptography makes infeasible.
+So no tool — this one included — can produce a key for the contract deployer,
+for a previous owner, or for any address whose seed you do not already hold.
+
+What it *can* do is derive the next wallet from a mnemonic you already have.
+
+**That wallet starts at zero.** It is a brand new address with no history and no
+balance. It grants access to nothing that exists today. If a balance sits at some
+other address, only the key for *that* address can move it — deriving a fresh
+wallet does not reach it.
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.

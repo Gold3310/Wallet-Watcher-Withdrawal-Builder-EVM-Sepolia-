@@ -10,7 +10,8 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:events": "tsx scripts/verify-events.ts"
+    "verify:events": "tsx scripts/verify-events.ts",
+    "wallet:derive": "tsx scripts/derive-wallet.ts"
   },
   "author": "Mumtaz503",
   "license": "ISC",

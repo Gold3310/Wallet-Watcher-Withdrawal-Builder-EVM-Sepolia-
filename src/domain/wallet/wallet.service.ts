@@ -1,6 +1,9 @@
-import { HDNodeWallet, Mnemonic } from "ethers";
-import { config, DERIVATION_PATH_PREFIX } from "../../config/index.js";
+import { config } from "../../config/index.js";
 import { getProvider } from "../../infra/rpc/provider.js";
+import {
+  deriveWalletAtIndex,
+  getDerivationPath,
+} from "./derivation.js";
 
 export interface DerivedWallet {
   index: number;
@@ -8,19 +11,9 @@ export interface DerivedWallet {
   path: string;
 }
 
-export function getDerivationPath(index: number): string {
-  return `${DERIVATION_PATH_PREFIX}/${index}`;
-}
-
-export function deriveWalletAtIndex(
-  mnemonic: string,
-  index: number,
-): HDNodeWallet {
-  return HDNodeWallet.fromMnemonic(
-    Mnemonic.fromPhrase(mnemonic),
-    getDerivationPath(index),
-  );
-}
+// Re-exported so existing callers keep working: derivation itself lives in
+// derivation.js, which needs no config and no network.
+export { deriveWalletAtIndex, getDerivationPath } from "./derivation.js";
 
 export function deriveWallets(
   mnemonic: string,
