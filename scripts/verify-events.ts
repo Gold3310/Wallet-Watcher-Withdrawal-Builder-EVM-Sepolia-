@@ -1,9 +1,10 @@
 /**
  * Verify the evidence file against a chain.
  *
- *   npm run verify:events -- <RPC_URL>
- *   npm run verify:events -- <RPC_URL> --in evidence/erc20-transfer-events.json \
- *     --out evidence/erc20-transfer-events.verified.json
+ *   npm run verify:events -- <RPC_URL> --in <events.json> [--out <verified.json>]
+ *
+ * The input file is required: this tool no longer defaults to any particular
+ * contract's export, so it cannot silently verify the wrong dataset.
  *
  * Read-only: it fetches receipts and compares fields. It signs and sends
  * nothing. Exits non-zero if any row failed to match.
@@ -27,11 +28,13 @@ function arg(name: string): string | undefined {
 }
 
 const rpcUrl = process.argv[2];
-const inputPath = arg("in") ?? "evidence/erc20-transfer-events.json";
-const outputPath = arg("out") ?? "evidence/erc20-transfer-events.verified.json";
+const inputPath = arg("in");
+const outputPath = arg("out");
 
-if (!rpcUrl || rpcUrl.startsWith("--")) {
-  console.error("Usage: npm run verify:events -- <RPC_URL> [--in FILE] [--out FILE]");
+if (!rpcUrl || rpcUrl.startsWith("--") || !inputPath) {
+  console.error(
+    "Usage: npm run verify:events -- <RPC_URL> --in <events.json> [--out <verified.json>]",
+  );
   process.exit(1);
 }
 
@@ -90,9 +93,11 @@ if (failures.length > 0) {
   }
 }
 
-fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
-console.log("");
-console.log(`Report written to ${outputPath}`);
+if (outputPath) {
+  fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+  console.log("");
+  console.log(`Report written to ${outputPath}`);
+}
 
 if (!isFullyVerified(report)) {
   console.error("Verification did not complete cleanly — see the report.");

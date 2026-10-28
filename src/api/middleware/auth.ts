@@ -72,3 +72,29 @@ export function authenticate(
 export function actorId(req: Request): string {
   return req.actor?.id ?? "anonymous";
 }
+
+/**
+ * Rejects any actor that is not the configured sole owner.
+ *
+ * `OWNER_ADDRESS` is validated against `API_TOKENS` at startup, so in a
+ * correctly configured process this never fires — an unauthorised principal
+ * cannot get past `authenticate` with a different id. It is here so the
+ * guarantee holds even if credentials are later reloaded or misconfigured:
+ * the check is on the request, not only on the boot-time config.
+ */
+export function authorizeOwner(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const owner = config.ownerAddress;
+
+  if (owner && actorId(req).toLowerCase() !== owner.toLowerCase()) {
+    res.status(403).json({
+      error: `Forbidden: only ${owner} may perform this action`,
+    });
+    return;
+  }
+
+  next();
+}

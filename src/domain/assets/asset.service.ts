@@ -1,7 +1,7 @@
 /**
  * Asset reporting: native balance plus any configured ERC-20 balances.
  *
- * Read-only `eth_call` against the token contracts in `TRACKED_TOKENS`. Nothing
+ * Read-only `eth_call` against the contracts in `TRACKED_CONTRACT`. Nothing
  * here signs or sends.
  *
  * Metadata calls are treated as optional on purpose: plenty of real tokens have
@@ -121,7 +121,7 @@ export async function getWalletAssets(
 ): Promise<WalletAssets> {
   const native = await provider.getBalance(wallet.address);
   const tokens = await Promise.all(
-    config.trackedTokens.map((token) => readTokenAsset(provider, token, wallet.address)),
+    config.trackedContracts.map((token) => readTokenAsset(provider, token, wallet.address)),
   );
 
   return {

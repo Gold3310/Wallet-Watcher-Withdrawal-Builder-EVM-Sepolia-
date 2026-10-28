@@ -134,7 +134,7 @@ function parseApiTokens(raw: string | undefined): Map<string, string> {
   return tokens;
 }
 
-function parseAddressList(raw: string | undefined): string[] {
+function parseAddressList(raw: string | undefined, name: string): string[] {
   if (!raw || !raw.trim()) {
     return [];
   }
@@ -145,10 +145,59 @@ function parseAddressList(raw: string | undefined): string[] {
     .filter(Boolean)
     .map((entry) => {
       if (!isAddress(entry)) {
-        throw new Error(`Invalid address in WITHDRAWAL_ALLOWLIST: ${entry}`);
+        throw new Error(`Invalid address in ${name}: ${entry}`);
       }
       return getAddress(entry);
     });
+}
+
+/**
+ * `OWNER_ADDRESS` — the one address permitted to act.
+ *
+ * When set, this is not advisory: startup refuses to continue unless
+ * `API_TOKENS` contains exactly one entry and it is this address, and every
+ * request is checked against it. That makes "only this owner" a property of
+ * the running process rather than a convention in a config file.
+ */
+function parseSoleOwner(raw: string | undefined): string | null {
+  if (!raw || !raw.trim()) {
+    return null;
+  }
+
+  const value = raw.trim();
+
+  if (!isAddress(value)) {
+    throw new Error(
+      `OWNER_ADDRESS must be a valid Ethereum address, got: ${value}`,
+    );
+  }
+
+  return getAddress(value);
+}
+
+/**
+ * Contracts this service reports on in `GET /assets`.
+ *
+ * `TRACKED_CONTRACT` is the current name. `TRACKED_TOKENS` is accepted as a
+ * deprecated alias so an existing `.env` does not silently stop tracking — it
+ * warns instead of quietly ignoring a configured value.
+ */
+function parseTrackedContracts(): string[] {
+  const primary = process.env.TRACKED_CONTRACT;
+  const legacy = process.env.TRACKED_TOKENS;
+
+  if (!primary && legacy && legacy.trim()) {
+    console.warn(
+      "TRACKED_TOKENS is deprecated and will be removed — rename it to TRACKED_CONTRACT.",
+    );
+  }
+
+  const list = parseAddressList(
+    primary ?? legacy,
+    primary ? "TRACKED_CONTRACT" : "TRACKED_TOKENS",
+  );
+
+  return [...new Set(list)];
 }
 
 function parseOptionalWei(name: string, raw: string | undefined): bigint | null {
@@ -208,9 +257,14 @@ export const config = {
   /** Bearer tokens. Empty means the API runs unauthenticated (dev only). */
   apiTokens: parseApiTokens(process.env.API_TOKENS),
   /** Destinations withdrawals may target. Empty means unrestricted. */
-  withdrawalAllowlist: parseAddressList(process.env.WITHDRAWAL_ALLOWLIST),
-  /** ERC-20 contracts to report balances for in GET /assets. */
-  trackedTokens: parseAddressList(process.env.TRACKED_TOKENS),
+  withdrawalAllowlist: parseAddressList(
+    process.env.WITHDRAWAL_ALLOWLIST,
+    "WITHDRAWAL_ALLOWLIST",
+  ),
+  /** The sole address permitted to act. Null means any configured token may. */
+  ownerAddress: parseSoleOwner(process.env.OWNER_ADDRESS),
+  /** Contracts to report balances for in GET /assets. */
+  trackedContracts: parseTrackedContracts(),
   /** Optional per-transaction ceiling on any network. */
   withdrawalMaxValueWei: parseOptionalWei(
     "WITHDRAWAL_MAX_VALUE_WEI",
@@ -233,6 +287,32 @@ if (!config.isTestnet && config.apiTokens.size === 0) {
     "Refusing to start on mainnet without API_TOKENS: set at least one " +
       '"<ownerAddress>:<secret>" pair so withdrawals are attributable.',
   );
+}
+
+// Sole-owner mode is enforced, not documented: if OWNER_ADDRESS is set, the
+// configured credentials must resolve to exactly that one address.
+if (config.ownerAddress) {
+  const owners = [...config.apiTokens.keys()];
+
+  if (owners.length === 0) {
+    throw new Error(
+      `OWNER_ADDRESS is set to ${config.ownerAddress} but API_TOKENS is empty. ` +
+        `Set API_TOKENS="${config.ownerAddress}:<secret>" for exactly that address.`,
+    );
+  }
+
+  if (owners.length > 1) {
+    throw new Error(
+      `OWNER_ADDRESS permits exactly one owner, but ${owners.length} are configured ` +
+        `(${owners.join(", ")}). Remove every entry except ${config.ownerAddress}.`,
+    );
+  }
+
+  if (owners[0] !== config.ownerAddress) {
+    throw new Error(
+      `API_TOKENS owner ${owners[0]} does not match OWNER_ADDRESS ${config.ownerAddress}.`,
+    );
+  }
 }
 
 if (!Number.isInteger(config.withdrawalWindowSeconds) || config.withdrawalWindowSeconds <= 0) {

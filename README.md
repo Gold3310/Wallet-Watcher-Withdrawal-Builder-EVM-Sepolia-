@@ -10,6 +10,7 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - REST API for wallet balances and withdrawals
 - ERC-7715 session permissions (grant, inspect, revoke, redeem) with expiry and spending policies
 - Asset reporting: native and ERC-20 balances across every wallet, with totals
+- Sole-owner access control: one address, enforced at boot and on every request
 - Runs on Sepolia or mainnet, with per-chain guardrails when funds are real
 - Unit tests for wallet derivation, transaction building, permissions and network config
 
@@ -204,12 +205,13 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 | `MAINNET_MAX_TX_VALUE_WEI` | Mainnet per-transaction ceiling, in wei | `100000000000000000` (0.1 ETH) |
 | `MAINNET_MAX_GRANT_EXPIRY_SECONDS` | Longest mainnet permission grant | `86400` |
 | `MAINNET_ALLOW_UNBOUNDED_GRANTS` | Allow mainnet grants without a `spending-cap` | `false` |
-| `API_TOKENS` | Withdrawal owners as `<ownerAddress>:<secret>` pairs | unset (API unauthenticated) |
+| `OWNER_ADDRESS` | The one address permitted to act; enforced at boot and per request | unset (any configured token may act) |
+| `API_TOKENS` | That owner's credential, as `<ownerAddress>:<secret>` | unset (API unauthenticated) |
 | `WITHDRAWAL_ALLOWLIST` | Recipient addresses withdrawals may target | empty (any destination) |
 | `WITHDRAWAL_MAX_VALUE_WEI` | Per-transaction ceiling on any chain | unset |
 | `WITHDRAWAL_MAX_PER_WINDOW_WEI` | Max outflow per wallet per window | unset |
 | `WITHDRAWAL_WINDOW_SECONDS` | Velocity window | `86400` |
-| `TRACKED_TOKENS` | ERC-20 contracts to report in `GET /assets` | the token from `evidence/` |
+| `TRACKED_CONTRACT` | Contract to report in `GET /assets` | `0xee1DC6BC…` |
 | `WALLET_MNEMONIC` | BIP-39 mnemonic for wallet derivation | required |
 | `WALLET_COUNT` | Number of wallets to manage (1–20) | `5` |
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
@@ -251,12 +253,16 @@ Example response:
 Native **and** ERC-20 balances, read live from the chain. Use `?walletIndex=N`
 for a single wallet, or omit it for every wallet plus totals.
 
-Tracked tokens come from `TRACKED_TOKENS` (comma-separated contract addresses).
-The token in the committed event-log evidence is configured by default:
+The contract to report on comes from `TRACKED_CONTRACT`:
 
 ```
-TRACKED_TOKENS=0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed
+TRACKED_CONTRACT=0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea
 ```
+
+Comma-separated addresses are accepted if you want to watch more than one.
+Balances are read with ERC-20 calls, so if the tracked contract is not an
+ERC-20, its token entry reports an `error` while the native balance is still
+returned.
 
 Read-only `eth_call` — it signs nothing and does not touch the persisted
 balances, which the poller owns.
@@ -266,13 +272,13 @@ balances, which the poller owns.
   "network": "sepolia",
   "chainId": 11155111,
   "walletCount": 5,
-  "trackedTokens": ["0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed"],
+  "trackedContracts": ["0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea"],
   "totals": {
     "nativeWei": "5000000000000000000",
     "nativeEth": "5.0",
     "tokens": [
       {
-        "address": "0x32c3ce734cf52f9429c8a8ec2982e4fd714960ed",
+        "address": "0xee1dc6bcf1ee967a350e9ac6caaaa236109002ea",
         "symbol": "TST",
         "decimals": 18,
         "totalRaw": "1234500000000000000000",
@@ -288,7 +294,7 @@ balances, which the poller owns.
       "nativeEth": "1.0",
       "tokens": [
         {
-          "address": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+          "address": "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea",
           "symbol": "TST",
           "decimals": 18,
           "balanceRaw": "1234500000000000000000",
@@ -565,35 +571,57 @@ curl -s http://localhost:3000/permissions/1
 curl -s -X POST http://localhost:3000/permissions/1/revoke
 ```
 
-## Withdrawal owners
+## Sole owner
 
-A **withdrawal owner** is an address authorised to *request* withdrawals. Owners
-are configured in `API_TOKENS` as `<ownerAddress>:<secret>` pairs — the address
-is the identity the request acts as, and the secret is its bearer credential:
+This service runs for **exactly one owner** — the address in `OWNER_ADDRESS`:
 
 ```
-API_TOKENS=0x<your-owner-address>:<secret>
+OWNER_ADDRESS=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce
+API_TOKENS=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce:<secret>
 ```
 
-No owner ships configured — set your own in `.env`. How it behaves:
+That is enforced, not merely documented. On boot the process refuses to start
+unless `API_TOKENS` holds **exactly one** entry and it is that address:
 
-- Every route except `GET /health` requires `Authorization: Bearer <secret>`
-  whenever any owner is configured.
-- The **owner address** — not a label — is recorded on each outflow ledger entry
-  and returned as `requestedBy`, so every movement is attributable to an
-  on-chain identity.
-- Token ids must be valid addresses; they are normalised to EIP-55 checksum
-  form, so lowercase input works.
-- Mainnet refuses to boot unless at least one owner is configured.
-- Separate owners can be given separate secrets, which makes a single
-  credential revocable without disturbing the others.
+| Misconfiguration | Result |
+|------------------|--------|
+| No `API_TOKENS` entry at all | refuses to start — an empty list means an open API |
+| A token bound to a different address | refuses to start |
+| A second owner added alongside the right one | refuses to start |
+| An `OWNER_ADDRESS` that is not an address | refuses to start |
 
-Owner addresses are **requesters**, not recipients. To restrict where funds may
-be *sent*, use `WITHDRAWAL_ALLOWLIST` — a different list, empty by default:
+Every request is checked against it as well, so the guarantee holds per call
+and not only at boot. `GET /health` stays open for probes.
+
+Generate a secret with:
+
+```bash
+openssl rand -hex 32
+```
+
+### Owner is who may ask; allowlist is where it may go
+
+The owner is a **requester**, not a recipient. Where funds may be *sent* is a
+separate list, and it ships restricted to the owner — so out of the box, funds
+can only move to you:
 
 ```
-WITHDRAWAL_ALLOWLIST=0x<destination-address>
+WITHDRAWAL_ALLOWLIST=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce
 ```
+
+Add comma-separated addresses to widen it; empty it to allow any destination.
+
+### Withdrawing whenever you want
+
+Nothing here gates you by time. The velocity limits
+(`WITHDRAWAL_MAX_PER_WINDOW_WEI` and `WITHDRAWAL_WINDOW_SECONDS`) are **unset by
+default**, so there is no ceiling to hit and no window to wait out — the owner
+can request a withdrawal at any moment. They are guardrails you may switch on:
+set them and the service rejects any outflow that would exceed the ceiling
+within the window.
+
+The **owner address** — not a label — is recorded on each outflow ledger entry
+and returned as `requestedBy`, so every movement is attributable.
 
 Copy the configuration into your `.env` to activate it:
 
@@ -608,23 +636,21 @@ the address's key and the service verifies recovery before signing anything.
 
 ## Evidence and on-chain verification
 
-`evidence/erc20-transfer-events.json` holds an export of ERC-20 event logs
-(19 rows: 16 `Transfer`, 3 `Approval`) for the token at
-`0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed`, spanning blocks 85921676–86369971.
+`evidence/` holds exported ERC-20 event logs, plus the tooling that checks
+them against a chain.
 
-**None of it is verified yet.** The export carries no chain id and was collected
+**None of it is verified.** The export carries no chain id and was collected
 without any RPC or explorer access, so every row starts out unconfirmed. It is
 committed as *evidence*, not as established fact.
 
-Verify it against a node for the chain the logs came from:
+Verify a file against a node for the chain the logs came from:
 
 ```bash
-npm run verify:events -- https://your-rpc-url
-# or with explicit paths
-npm run verify:events -- https://your-rpc-url \
-  --in evidence/erc20-transfer-events.json \
-  --out evidence/erc20-transfer-events.verified.json
+npm run verify:events -- https://your-rpc-url --in evidence/<file>.json
 ```
+
+The input path is **required** — the verifier deliberately defaults to nothing,
+so it can never silently check the wrong dataset.
 
 For each row the verifier fetches the receipt and checks:
 
@@ -636,15 +662,15 @@ For each row the verifier fetches the receipt and checks:
 | Topics and data byte-for-byte | `MISMATCH` — the decoded amount or parties differ |
 
 It is read-only: it fetches receipts and compares fields, signs nothing, and
-exits non-zero if any checkable row failed. Results are written to
-`evidence/erc20-transfer-events.verified.json` with a per-row status.
+exits non-zero if any checkable row failed. Results are written beside the input
+as `<input>.verified.json` (override with `--out`) with a per-row status.
 
 Offline analysis, which needs no network:
 
 ```ts
 import { loadEvidence, summarize, netFlows, unboundedApprovals } from "./src/domain/evidence/analysis.js";
 
-const { rows } = loadEvidence();
+const { rows } = loadEvidence("evidence/<file>.json");
 summarize(rows);          // counts, unique txs/blocks, block range
 netFlows(rows);           // per-address in/out/net from Transfer events
 unboundedApprovals(rows); // approvals set to MAX_UINT256

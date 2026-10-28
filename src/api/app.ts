@@ -1,5 +1,5 @@
 import express, { NextFunction, Request, Response } from "express";
-import { authenticate } from "./middleware/auth.js";
+import { authenticate, authorizeOwner } from "./middleware/auth.js";
 import { assetsRouter } from "./routes/assets.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { walletsRouter } from "./routes/wallets.js";
@@ -16,6 +16,8 @@ export function createApp() {
   });
 
   app.use(authenticate);
+  // Second gate: when OWNER_ADDRESS is set, nothing but that owner gets through.
+  app.use(authorizeOwner);
 
   app.use("/assets", assetsRouter);
   app.use("/permissions", permissionsRouter);

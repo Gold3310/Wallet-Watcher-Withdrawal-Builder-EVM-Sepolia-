@@ -27,7 +27,7 @@ assetsRouter.get(
           network: config.network,
           chainId: config.chainId,
           walletCount: assets.length,
-          trackedTokens: config.trackedTokens,
+          trackedContracts: config.trackedContracts,
           totals: totalsOf(assets),
           wallets: assets,
         });
@@ -45,7 +45,7 @@ assetsRouter.get(
       res.json({
         network: config.network,
         chainId: config.chainId,
-        trackedTokens: config.trackedTokens,
+        trackedContracts: config.trackedContracts,
         wallet: asset,
       });
     } catch (error) {

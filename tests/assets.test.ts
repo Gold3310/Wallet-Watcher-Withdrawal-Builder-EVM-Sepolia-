@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { erc20Interface } from "../src/domain/assets/asset.service.js";
 import { withConfig } from "./helpers/withConfig.js";
 
-const TOKEN = "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed";
+const TOKEN = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
 const OTHER_TOKEN = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const TEST_MNEMONIC =
@@ -18,7 +18,7 @@ const BASE_ENV: Record<string, string | undefined> = {
   SEPOLIA_RPC_URL: "https://sepolia.example",
   DATABASE_PATH: ":memory:",
   API_TOKENS: undefined,
-  TRACKED_TOKENS: undefined,
+  TRACKED_CONTRACT: undefined,
 };
 
 interface MockOptions {
@@ -95,7 +95,7 @@ async function withAssets(
 describe("asset reporting", () => {
   it("reports native and token balances with decimals applied", async () => {
     await withAssets(
-      { TRACKED_TOKENS: TOKEN },
+      { TRACKED_CONTRACT: TOKEN },
       async ({ assets }) => {
         const wallets = await assets.getAllWalletAssets();
 
@@ -115,7 +115,7 @@ describe("asset reporting", () => {
 
   it("formats balances using the token's own decimals", async () => {
     await withAssets(
-      { TRACKED_TOKENS: TOKEN },
+      { TRACKED_CONTRACT: TOKEN },
       async ({ assets }) => {
         const asset = await assets.getWalletAssetsByIndex(0);
         expect(asset.tokens[0]!.balanceRaw).toBe(parseUnits("500", 6).toString());
@@ -131,7 +131,7 @@ describe("asset reporting", () => {
 
   it("still reports a balance when symbol() reverts", async () => {
     await withAssets(
-      { TRACKED_TOKENS: TOKEN },
+      { TRACKED_CONTRACT: TOKEN },
       async ({ assets }) => {
         const asset = await assets.getWalletAssetsByIndex(0);
 
@@ -148,7 +148,7 @@ describe("asset reporting", () => {
 
   it("reports an error instead of throwing when balanceOf reverts", async () => {
     await withAssets(
-      { TRACKED_TOKENS: `${TOKEN},${OTHER_TOKEN}` },
+      { TRACKED_CONTRACT: `${TOKEN},${OTHER_TOKEN}` },
       async ({ assets }) => {
         const asset = await assets.getWalletAssetsByIndex(0);
         const byAddress = new Map(
@@ -172,7 +172,7 @@ describe("asset reporting", () => {
   });
 
   it("returns no tokens when none are tracked", async () => {
-    await withAssets({ TRACKED_TOKENS: undefined }, async ({ assets }) => {
+    await withAssets({ TRACKED_CONTRACT: undefined }, async ({ assets }) => {
       const asset = await assets.getWalletAssetsByIndex(0);
       expect(asset.tokens).toEqual([]);
     });
@@ -180,7 +180,7 @@ describe("asset reporting", () => {
 
   it("sums each asset across every wallet", async () => {
     await withAssets(
-      { TRACKED_TOKENS: TOKEN },
+      { TRACKED_CONTRACT: TOKEN },
       async ({ assets }) => {
         const totals = assets.totalsOf(await assets.getAllWalletAssets());
 
@@ -195,7 +195,7 @@ describe("asset reporting", () => {
 
   it("exposes assets over HTTP", async () => {
     await withConfig(
-      { ...BASE_ENV, TRACKED_TOKENS: TOKEN },
+      { ...BASE_ENV, TRACKED_CONTRACT: TOKEN },
       async () => {
         const { createApp } = await import("../src/api/app.js");
         const { initializeWallets } = await import(
@@ -226,7 +226,7 @@ describe("asset reporting", () => {
 
           expect(all.status).toBe(200);
           expect(body.walletCount).toBe(3);
-          expect(body.trackedTokens).toEqual([TOKEN]);
+          expect(body.trackedContracts).toEqual([TOKEN]);
           expect(body.wallets[0].tokens[0].balanceFormatted).toBe("42.0");
 
           const single = await fetch(`${baseUrl}/assets?walletIndex=1`);
