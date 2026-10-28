@@ -305,6 +305,24 @@ export const HUB_POOL_IMMUTABLE =
   "0xc186fA914353c44b2E33eBE05f21846F1048bEda";
 
 /**
+ * The deployer, from Etherscan. Under OpenZeppelin's Ownable the constructor
+ * runs `_transferOwnership(_msgSender())`, so **the deployer is the initial
+ * owner** — until and unless `transferOwnership` moved it elsewhere.
+ *
+ * Two consequences worth keeping in view:
+ *
+ * - `owner()` has to be read from chain to know who holds the role now. This
+ *   address is only where it started. Reporting compares the configured
+ *   `OWNER_ADDRESS` against the live `owner()` rather than against this.
+ * - Even if the configured owner did hold the role, it would grant nothing
+ *   toward moving value. Ownable exposes `setProposer`, `transferOwnership`
+ *   and `renounceOwnership`; there is no owner-withdraw function, and
+ *   `setProposer` only affects transfers to the hubPool.
+ */
+export const CONTRACT_CREATOR =
+  "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";
+
+/**
  * Just the one function BondToken calls on the hubPool, enough to decode the
  * RootBundle struct and read `proposer` out of it. 7 words = 224 bytes, which
  * matches the staticcall in the bytecode exactly.

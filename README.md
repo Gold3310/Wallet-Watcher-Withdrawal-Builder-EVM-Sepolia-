@@ -289,6 +289,7 @@ balances, which the poller owns.
       "totalSupplyRaw": "1000000000000000000000",
       "totalSupplyFormatted": "1000.0",
       "owner": "0x…",
+      "ownerIsServiceOwner": false,
       "hubPool": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       "restrictedDestination": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       "restriction": "Transfers to any address are unrestricted, except to the hubPool…",
@@ -419,6 +420,31 @@ One more constraint, stated plainly because it bites late: **this service signs
 only for the wallets derived from `WALLET_MNEMONIC`.** An address that is not
 one of them can be the API owner, can be allowlisted as a destination, and can
 be reported on — but the service cannot sign a transaction for it.
+
+`getContractInfo` reports `ownerIsServiceOwner`, which compares the live
+`owner()` against your configured `OWNER_ADDRESS`. Expect `false`; the two roles
+are unrelated by design.
+
+### Who deployed it, and why that is not you
+
+The contract was created by `0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D`.
+OpenZeppelin's `Ownable` constructor runs `_transferOwnership(_msgSender())`, so
+**the deployer starts out as the owner** — and that address is Across'
+deployment account, not yours.
+
+That settles the ownership question unless `transferOwnership` was called later,
+which only reading `owner()` from chain can confirm (`GET /assets` does exactly
+that). Either way it changes nothing about access to the ETH:
+
+- Even as contract owner you could not withdraw a wei. Ownable exposes
+  `setProposer`, `transferOwnership` and `renounceOwnership` — nothing else.
+- `setProposer` would only let an address transfer ABT **to the hubPool**, which
+  is the bond-staking path. It has no bearing on ordinary transfers or on
+  `withdraw()`.
+
+So the question remains the one from before, and it is the only one that
+matters: **does `0x2ddfbeca…` — or any wallet derived from your mnemonic — hold
+ABT?**
 
 ### `POST /assets/unwrap`
 

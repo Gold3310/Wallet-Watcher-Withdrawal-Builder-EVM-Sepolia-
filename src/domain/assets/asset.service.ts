@@ -25,6 +25,7 @@ import {
 } from "./abi.js";
 
 export {
+  CONTRACT_CREATOR,
   HUB_POOL_ABI,
   HUB_POOL_IMMUTABLE,
   hubPoolInterface,
@@ -71,8 +72,17 @@ export interface ContractInfo {
   decimals: number | null;
   totalSupplyRaw: string | null;
   totalSupplyFormatted: string | null;
-  /** On-chain owner. This is NOT the same thing as this service's owner. */
+  /**
+   * On-chain owner. This is NOT the same thing as this service's
+   * `OWNER_ADDRESS`, and holding it grants no right to move value.
+   */
   owner: string | null;
+  /**
+   * Whether the on-chain owner is the address configured as this service's
+   * owner. Almost always false, and worth reporting rather than assuming.
+   * Null when either side is unset or unreadable.
+   */
+  ownerIsServiceOwner: boolean | null;
   /** The hubPool the contract was deployed against, pinned at construction. */
   hubPool: string | null;
   /**
@@ -320,6 +330,10 @@ export async function readContractInfo(
         ? null
         : formatUnits(totalSupply, Number(decimals)),
     owner,
+    ownerIsServiceOwner:
+      owner === null || !config.ownerAddress
+        ? null
+        : owner.toLowerCase() === config.ownerAddress.toLowerCase(),
     hubPool,
     restrictedDestination: hubPool,
     restriction: TRANSFER_RESTRICTION,

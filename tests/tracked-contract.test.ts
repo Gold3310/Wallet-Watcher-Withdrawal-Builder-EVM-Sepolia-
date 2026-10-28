@@ -13,6 +13,9 @@ import {
 const CONTRACT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
 const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
 const OWNER_CHECKSUMMED = getAddress(OWNER);
+/** The deployer. Ownable makes the deployer the initial owner. */
+const CONTRACT_CREATOR = "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";
+const CREATOR_CHECKSUMMED = getAddress(CONTRACT_CREATOR);
 const HUB_POOL = HUB_POOL_IMMUTABLE;
 const OTHER_TOKEN = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const TX_HASH = "0x" + "ab".repeat(32);
@@ -340,6 +343,46 @@ describe("destination-scoped transfer gate", () => {
         ethBalances: { [CONTRACT.toLowerCase()]: parseUnits("42.591", 18) },
       },
     );
+  });
+
+  it("reports whether the service owner is also the contract owner", async () => {
+    // Matching case: the contract's owner() is the configured OWNER_ADDRESS.
+    await withTracked(
+      {
+        TRACKED_CONTRACT: CONTRACT,
+        OWNER_ADDRESS: OWNER,
+        API_TOKENS: `${OWNER}:owner-secret`,
+      },
+      async ({ assets }) => {
+        const [info] = await assets.getTrackedContractInfo();
+        expect(info!.owner).toBe(OWNER_CHECKSUMMED);
+        expect(info!.ownerIsServiceOwner).toBe(true);
+      },
+    );
+
+    // The realistic case: the contract is owned by whoever deployed it, not
+    // by whoever runs this service.
+    await withTracked(
+      {
+        TRACKED_CONTRACT: CONTRACT,
+        OWNER_ADDRESS: OWNER,
+        API_TOKENS: `${OWNER}:owner-secret`,
+      },
+      async ({ assets }) => {
+        const [info] = await assets.getTrackedContractInfo();
+        expect(info!.owner).toBe(CREATOR_CHECKSUMMED);
+        expect(info!.ownerIsServiceOwner).toBe(false);
+      },
+      { owner: { [CONTRACT.toLowerCase()]: CONTRACT_CREATOR } },
+    );
+  });
+
+  it("leaves ownership unknown when no service owner is configured", async () => {
+    await withTracked({ TRACKED_CONTRACT: CONTRACT }, async ({ assets }) => {
+      const [info] = await assets.getTrackedContractInfo();
+      expect(info!.owner).toBe(OWNER_CHECKSUMMED);
+      expect(info!.ownerIsServiceOwner).toBeNull();
+    });
   });
 
   it("flags a supply that is not fully backed", async () => {
