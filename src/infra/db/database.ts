@@ -20,6 +20,8 @@ export interface LedgerRow {
   type: LedgerType;
   amount_wei: string;
   tx_hash: string | null;
+  /** API token id that requested the movement; null for polled inflows. */
+  actor: string | null;
   created_at: string;
 }
 
@@ -51,6 +53,25 @@ function ensureDatabaseDirectory(databasePath: string): void {
   fs.mkdirSync(directory, { recursive: true });
 }
 
+/**
+ * Additive column migration. Older databases were created before `ledger.actor`
+ * existed, so it is added on first open rather than breaking them.
+ */
+function ensureColumn(
+  database: Database.Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = database
+    .prepare(`PRAGMA table_info(${table})`)
+    .all() as { name: string }[];
+
+  if (!columns.some((entry) => entry.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
+}
+
 export function getDatabase(): Database.Database {
   if (!db) {
     ensureDatabaseDirectory(config.databasePath);
@@ -58,6 +79,7 @@ export function getDatabase(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initializeSchema(db);
+    ensureColumn(db, "ledger", "actor", "actor TEXT");
     bindNetwork(db, config.network, config.chainId);
   }
   return db;
@@ -145,6 +167,20 @@ function initializeSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_wallet_id ON permission_sessions(wallet_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_context ON permission_sessions(permissions_context);
+
+    CREATE TABLE IF NOT EXISTS idempotency (
+      key TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('in_progress', 'completed')),
+      status_code INTEGER,
+      response TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency(created_at);
   `);
 }
 
@@ -229,19 +265,42 @@ export function insertLedgerEntry(
   type: LedgerType,
   amountWei: string,
   txHash: string | null = null,
+  actor: string | null = null,
 ): LedgerRow {
   const result = getDatabase()
     .prepare(
       `
-      INSERT INTO ledger (wallet_id, type, amount_wei, tx_hash)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO ledger (wallet_id, type, amount_wei, tx_hash, actor)
+      VALUES (?, ?, ?, ?, ?)
     `,
     )
-    .run(walletId, type, amountWei, txHash);
+    .run(walletId, type, amountWei, txHash, actor);
 
   return getDatabase()
     .prepare("SELECT * FROM ledger WHERE id = ?")
     .get(result.lastInsertRowid) as LedgerRow;
+}
+
+/** Outflow total for a wallet over the trailing window, summed with BigInt. */
+export function getOutflowTotalSince(
+  walletId: number,
+  seconds: number,
+): bigint {
+  const rows = getDatabase()
+    .prepare(
+      `
+      SELECT amount_wei
+      FROM ledger
+      WHERE wallet_id = ?
+        AND type = 'outflow'
+        AND created_at >= datetime('now', ?)
+    `,
+    )
+    .all(walletId, `-${Math.max(0, Math.floor(seconds))} seconds`) as {
+    amount_wei: string;
+  }[];
+
+  return rows.reduce((total, row) => total + BigInt(row.amount_wei), 0n);
 }
 
 export function getWalletById(id: number): WalletRow | undefined {
@@ -361,20 +420,117 @@ export function getPermissionSessions(walletId?: number): PermissionSessionRow[]
     .all(walletId) as PermissionSessionRow[];
 }
 
-/** Records a redemption: adds to cumulative spend and burns the action nonce. */
-export function recordSessionRedemption(
-  id: number,
-  spentWei: string,
-): void {
-  getDatabase()
-    .prepare(
-      `
-      UPDATE permission_sessions
-      SET spent_wei = ?, nonce = nonce + 1
-      WHERE id = ?
-    `,
-    )
-    .run(spentWei, id);
+export interface SpendReservation {
+  ok: boolean;
+  /** Nonce assigned to this action; the stored nonce is already advanced. */
+  nonce: number;
+  spentWei: string;
+  reason?: string;
+}
+
+/**
+ * Reserve spend against a session's cap and claim its action nonce, atomically.
+ *
+ * This has to be one immediate transaction: reading the row, checking the cap
+ * and writing the new total across separate statements lets two concurrent
+ * redemptions both read the same `spent_wei` and both pass, moving more than
+ * the cap allows. Everything inside the transaction callback is synchronous.
+ */
+export function reserveSessionSpend(params: {
+  id: number;
+  amountWei: string;
+  cap: bigint | null;
+  now: number;
+}): SpendReservation {
+  const database = getDatabase();
+
+  const run = database.transaction((input: typeof params): SpendReservation => {
+    const row = database
+      .prepare(
+        "SELECT id, expiry, spent_wei, nonce, revoked_at FROM permission_sessions WHERE id = ?",
+      )
+      .get(input.id) as
+      | {
+          id: number;
+          expiry: number;
+          spent_wei: string;
+          nonce: number;
+          revoked_at: number | null;
+        }
+      | undefined;
+
+    if (!row) {
+      return { ok: false, nonce: 0, spentWei: "0", reason: `Permission session ${input.id} does not exist` };
+    }
+
+    if (row.revoked_at !== null) {
+      return {
+        ok: false,
+        nonce: row.nonce,
+        spentWei: row.spent_wei,
+        reason: `Permission session ${input.id} was revoked at ${new Date(row.revoked_at * 1000).toISOString()}`,
+      };
+    }
+
+    if (input.now >= row.expiry) {
+      return {
+        ok: false,
+        nonce: row.nonce,
+        spentWei: row.spent_wei,
+        reason: `Permission session ${input.id} expired at ${new Date(row.expiry * 1000).toISOString()}`,
+      };
+    }
+
+    const amount = BigInt(input.amountWei);
+    const spent = BigInt(row.spent_wei);
+    const next = spent + amount;
+
+    if (input.cap !== null && next > input.cap) {
+      return {
+        ok: false,
+        nonce: row.nonce,
+        spentWei: row.spent_wei,
+        reason: `Amount ${amount} wei exceeds the remaining spending cap of ${input.cap - spent} wei`,
+      };
+    }
+
+    database
+      .prepare(
+        "UPDATE permission_sessions SET spent_wei = ?, nonce = nonce + 1 WHERE id = ?",
+      )
+      .run(next.toString(), input.id);
+
+    return { ok: true, nonce: row.nonce, spentWei: next.toString() };
+  });
+
+  return run.immediate(params);
+}
+
+/**
+ * Give back a reservation when the redemption failed after reserving — before
+ * any funds moved, so the cap and nonce must not stay consumed.
+ */
+export function releaseSessionSpend(id: number, amountWei: string): void {
+  const database = getDatabase();
+
+  const run = database.transaction((input: { id: number; amountWei: string }) => {
+    const row = database
+      .prepare("SELECT spent_wei FROM permission_sessions WHERE id = ?")
+      .get(input.id) as { spent_wei: string } | undefined;
+
+    if (!row) {
+      return;
+    }
+
+    const next = BigInt(row.spent_wei) - BigInt(input.amountWei);
+    database
+      .prepare(
+        "UPDATE permission_sessions SET spent_wei = ?, nonce = MAX(0, nonce - 1) WHERE id = ?",
+      )
+      .run((next > 0n ? next : 0n).toString(), input.id);
+  });
+
+  run.immediate({ id, amountWei });
 }
 
 export function revokePermissionSession(id: number, revokedAt: number): void {
@@ -395,6 +551,58 @@ export function getLedgerForWallet(walletId: number): LedgerRow[] {
     `,
     )
     .all(walletId) as LedgerRow[];
+}
+
+export interface IdempotencyRow {
+  key: string;
+  scope: string;
+  actor: string;
+  request_hash: string;
+  status: string;
+  status_code: number | null;
+  response: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export function readIdempotencyRecord(
+  key: string,
+): IdempotencyRow | undefined {
+  return getDatabase()
+    .prepare("SELECT * FROM idempotency WHERE key = ?")
+    .get(key) as IdempotencyRow | undefined;
+}
+
+export function insertIdempotencyRecord(record: {
+  key: string;
+  scope: string;
+  actor: string;
+  requestHash: string;
+}): void {
+  getDatabase()
+    .prepare(
+      `
+      INSERT INTO idempotency (key, scope, actor, request_hash, status)
+      VALUES (?, ?, ?, ?, 'in_progress')
+    `,
+    )
+    .run(record.key, record.scope, record.actor, record.requestHash);
+}
+
+export function completeIdempotentRequest(
+  key: string,
+  statusCode: number,
+  response: string,
+): void {
+  getDatabase()
+    .prepare(
+      `
+      UPDATE idempotency
+      SET status = 'completed', status_code = ?, response = ?, completed_at = datetime('now')
+      WHERE key = ?
+    `,
+    )
+    .run(statusCode, response, key);
 }
 
 export function resetDatabase(): void {

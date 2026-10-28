@@ -9,6 +9,12 @@ import {
   revokeSession,
 } from "../../domain/permissions/permission.service.js";
 import { SIGNER_TYPES } from "../../domain/permissions/types.js";
+import { actorId } from "../middleware/auth.js";
+import {
+  abandonIdempotentRequest,
+  beginIdempotentRequest,
+  completeIdempotentRequest,
+} from "../middleware/idempotency.js";
 
 export const permissionsRouter = Router();
 
@@ -171,22 +177,50 @@ permissionsRouter.post(
         throw new Error("amountWei is required");
       }
 
-      const result = await redeemPermission({
-        sessionId: parseId(String(req.params.id)),
-        toAddress: body.toAddress,
-        amountWei: body.amountWei,
-        broadcast: body.broadcast ?? false,
-      });
+      const sessionId = parseId(String(req.params.id));
+      const broadcast = body.broadcast ?? false;
+      const actor = actorId(req);
 
-      res.status(result.withdrawal.broadcast ? 201 : 200).json({
-        network: config.network,
-        chainId: config.chainId,
-        broadcast: result.withdrawal.broadcast,
-        txHash: result.withdrawal.txHash ?? null,
-        authorization: result.authorization,
-        transaction: result.withdrawal.built,
-        session: result.session,
-      });
+      const idempotency = beginIdempotentRequest(
+        req,
+        res,
+        `permissions:redeem:${sessionId}`,
+        { sessionId, toAddress: body.toAddress, amountWei: body.amountWei, broadcast },
+        broadcast,
+      );
+
+      if (!idempotency) {
+        return;
+      }
+
+      try {
+        const result = await redeemPermission({
+          sessionId,
+          toAddress: body.toAddress,
+          amountWei: body.amountWei,
+          broadcast,
+          actor,
+        });
+
+        const status = result.withdrawal.broadcast ? 201 : 200;
+
+        const response = {
+          network: config.network,
+          chainId: config.chainId,
+          broadcast: result.withdrawal.broadcast,
+          txHash: result.withdrawal.txHash ?? null,
+          requestedBy: actor,
+          authorization: result.authorization,
+          transaction: result.withdrawal.built,
+          session: result.session,
+        };
+
+        completeIdempotentRequest(idempotency, status, response);
+        res.status(status).json(response);
+      } catch (error) {
+        abandonIdempotentRequest(idempotency);
+        next(error);
+      }
     } catch (error) {
       next(error);
     }

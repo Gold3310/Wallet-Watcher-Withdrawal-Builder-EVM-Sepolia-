@@ -4,6 +4,7 @@ export function recordOutflow(
   walletId: number,
   amountWei: string,
   txHash: string,
+  actor: string | null = null,
 ): void {
-  insertLedgerEntry(walletId, "outflow", amountWei, txHash);
+  insertLedgerEntry(walletId, "outflow", amountWei, txHash, actor);
 }

@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from "express";
+import { authenticate } from "./middleware/auth.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { walletsRouter } from "./routes/wallets.js";
 import { withdrawalsRouter } from "./routes/withdrawals.js";
@@ -8,9 +9,12 @@ export function createApp() {
 
   app.use(express.json());
 
+  // /health stays unauthenticated for load balancers.
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
+
+  app.use(authenticate);
 
   app.use("/permissions", permissionsRouter);
   app.use("/wallets", walletsRouter);
@@ -28,7 +32,8 @@ export function createApp() {
         message.includes("does not grant") ||
         message.includes("expired") ||
         message.includes("revoked") ||
-        message.includes("exceeds")
+        message.includes("exceeds") ||
+        message.includes("allowlist")
         ? 400
         : 500;
 

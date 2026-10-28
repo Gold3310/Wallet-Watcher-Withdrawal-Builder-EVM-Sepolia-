@@ -4,7 +4,6 @@ import { initializeWallets } from "../src/domain/balance/balance.service.js";
 import {
   CONTEXT_TAG,
   buildGrantDigest,
-  canonicalJson,
   decodePermissionsContext,
   encodePermissionsContext,
   hashPermission,
@@ -12,6 +11,7 @@ import {
   hashPolicies,
   selectorOf,
 } from "../src/domain/permissions/encoding.js";
+import { canonicalJson } from "../src/util/canonical.js";
 import {
   deriveSessionWallet,
   grantPermissions,

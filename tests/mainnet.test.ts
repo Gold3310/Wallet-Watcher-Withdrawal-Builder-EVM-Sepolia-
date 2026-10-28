@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseEther } from "ethers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withConfig } from "./helpers/withConfig.js";
 
 const DESTINATION = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
@@ -27,46 +28,9 @@ const MAINNET_ENV = {
   CHAIN: "mainnet",
   MAINNET_ENABLED: "true",
   MAINNET_RPC_URL: "https://mainnet.example",
+  // Required: mainnet refuses to boot with an unauthenticated API.
+  API_TOKENS: "ops:test-token",
 };
-
-type Config = typeof import("../src/config/index.js")["config"];
-
-/**
- * Re-imports the config (and anything the callback imports) under a different
- * environment. Config is evaluated once at module load, so it needs a module
- * reset to pick up new values.
- */
-async function withConfig<T>(
-  env: Record<string, string | undefined>,
-  fn: (config: Config) => Promise<T> | T,
-): Promise<T> {
-  const original = { ...process.env };
-
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-
-  vi.resetModules();
-
-  try {
-    const { config } = await import("../src/config/index.js");
-    return await fn(config);
-  } finally {
-    for (const key of Object.keys(process.env)) {
-      if (!(key in original)) {
-        delete process.env[key];
-      }
-    }
-    for (const [key, value] of Object.entries(original)) {
-      process.env[key] = value as string;
-    }
-    vi.resetModules();
-  }
-}
 
 function mockProvider() {
   return {
@@ -130,6 +94,12 @@ describe("network configuration", () => {
         expect(config.databasePath).toBe("./data/mainnet-wallets.db");
       },
     );
+  });
+
+  it("refuses to expose an unauthenticated API on mainnet", async () => {
+    await expect(
+      withConfig({ ...MAINNET_ENV, API_TOKENS: undefined }, () => null),
+    ).rejects.toThrow("Refusing to start on mainnet without API_TOKENS");
   });
 
   it("rejects an unknown chain", async () => {

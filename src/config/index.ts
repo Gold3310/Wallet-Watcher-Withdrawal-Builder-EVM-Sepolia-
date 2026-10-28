@@ -1,3 +1,4 @@
+import { getAddress, isAddress } from "ethers";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -87,6 +88,61 @@ function parseWeiEnv(name: string, fallback: bigint): bigint {
   return value;
 }
 
+/** `API_TOKENS="ops:<secret>,ci:<secret>"` — caller id to its bearer secret. */
+function parseApiTokens(raw: string | undefined): Map<string, string> {
+  const tokens = new Map<string, string>();
+  if (!raw || !raw.trim()) {
+    return tokens;
+  }
+
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const separator = trimmed.indexOf(":");
+    if (separator <= 0 || separator === trimmed.length - 1) {
+      throw new Error(
+        `API_TOKENS entries must be "<id>:<secret>" (got: ${trimmed})`,
+      );
+    }
+
+    const id = trimmed.slice(0, separator).trim();
+    if (tokens.has(id)) {
+      throw new Error(`Duplicate API token id: ${id}`);
+    }
+
+    tokens.set(id, trimmed.slice(separator + 1).trim());
+  }
+
+  return tokens;
+}
+
+function parseAddressList(raw: string | undefined): string[] {
+  if (!raw || !raw.trim()) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      if (!isAddress(entry)) {
+        throw new Error(`Invalid address in WITHDRAWAL_ALLOWLIST: ${entry}`);
+      }
+      return getAddress(entry);
+    });
+}
+
+function parseOptionalWei(name: string, raw: string | undefined): bigint | null {
+  if (!raw || !raw.trim()) {
+    return null;
+  }
+  return parseWeiEnv(name, 1n);
+}
+
 const networkConfig: NetworkConfig = NETWORKS[parseNetwork(process.env.CHAIN)];
 
 /**
@@ -134,8 +190,38 @@ export const config = {
   /** Mainnet grants must carry a `spending-cap` unless this is relaxed. */
   allowUnboundedGrants:
     networkConfig.testnet || process.env.MAINNET_ALLOW_UNBOUNDED_GRANTS === "true",
+  /** Bearer tokens. Empty means the API runs unauthenticated (dev only). */
+  apiTokens: parseApiTokens(process.env.API_TOKENS),
+  /** Destinations withdrawals may target. Empty means unrestricted. */
+  withdrawalAllowlist: parseAddressList(process.env.WITHDRAWAL_ALLOWLIST),
+  /** Optional per-transaction ceiling on any network. */
+  withdrawalMaxValueWei: parseOptionalWei(
+    "WITHDRAWAL_MAX_VALUE_WEI",
+    process.env.WITHDRAWAL_MAX_VALUE_WEI,
+  ),
+  /** Velocity limit: max outflow per wallet per window. Null disables it. */
+  withdrawalMaxPerWindowWei: parseOptionalWei(
+    "WITHDRAWAL_MAX_PER_WINDOW_WEI",
+    process.env.WITHDRAWAL_MAX_PER_WINDOW_WEI,
+  ),
+  withdrawalWindowSeconds: Number(process.env.WITHDRAWAL_WINDOW_SECONDS ?? "86400"),
   minWalletCount: MIN_WALLET_COUNT,
   maxWalletCount: MAX_WALLET_COUNT,
 };
+
+// Derived flags and cross-checks that need the assembled config.
+
+if (!config.isTestnet && config.apiTokens.size === 0) {
+  throw new Error(
+    "Refusing to start on mainnet without API_TOKENS: set at least one " +
+      '"<id>:<secret>" pair so withdrawals are attributable.',
+  );
+}
+
+if (!Number.isInteger(config.withdrawalWindowSeconds) || config.withdrawalWindowSeconds <= 0) {
+  throw new Error("WITHDRAWAL_WINDOW_SECONDS must be a positive integer");
+}
+
+export const apiAuthRequired = config.apiTokens.size > 0;
 
 export const DERIVATION_PATH_PREFIX = "m/44'/60'/0'/0";

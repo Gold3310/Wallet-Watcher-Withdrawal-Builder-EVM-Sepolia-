@@ -7,10 +7,14 @@ import {
   TransactionLike,
 } from "ethers";
 import { config } from "../../config/index.js";
-import { getWalletByIndex } from "../../infra/db/database.js";
+import {
+  getOutflowTotalSince,
+  getWalletByIndex,
+} from "../../infra/db/database.js";
 import { getProvider } from "../../infra/rpc/provider.js";
 import { syncWalletBalance } from "../balance/balance.service.js";
 import { recordOutflow } from "../ledger/ledger.service.js";
+import { allocateNonce, releaseNonce } from "../wallet/nonce.manager.js";
 import { getSignerForIndex } from "../wallet/wallet.service.js";
 
 export interface WithdrawalRequest {
@@ -18,6 +22,8 @@ export interface WithdrawalRequest {
   toAddress: string;
   amountWei: string;
   broadcast: boolean;
+  /** Caller identity from the API token, recorded on the outflow ledger entry. */
+  actor?: string | null;
 }
 
 export interface BuiltWithdrawal {
@@ -62,6 +68,50 @@ export function assertWithinNetworkValueLimit(value: bigint): void {
   }
 }
 
+/** Optional operator-set ceiling, independent of the per-network cap. */
+export function assertWithinConfiguredValueLimit(value: bigint): void {
+  const limit = config.withdrawalMaxValueWei;
+
+  if (limit !== null && value > limit) {
+    throw new Error(
+      `Amount ${value} wei exceeds the configured withdrawal limit of ${limit} wei`,
+    );
+  }
+}
+
+/** Destination allowlist. Empty config means unrestricted. */
+export function assertDestinationAllowed(toAddress: string): void {
+  const allowlist = config.withdrawalAllowlist;
+
+  if (allowlist.length > 0 && !allowlist.includes(toAddress)) {
+    throw new Error(`Destination ${toAddress} is not in the withdrawal allowlist`);
+  }
+}
+
+/**
+ * Velocity limit: total outflow per wallet over the trailing window, built-only
+ * withdrawals excluded because they never move funds.
+ */
+export function assertWithinVelocityLimit(
+  walletId: number,
+  value: bigint,
+): void {
+  const limit = config.withdrawalMaxPerWindowWei;
+
+  if (limit === null) {
+    return;
+  }
+
+  const spent = getOutflowTotalSince(walletId, config.withdrawalWindowSeconds);
+
+  if (spent + value > limit) {
+    throw new Error(
+      `Amount ${value} wei exceeds the remaining withdrawal allowance of ${limit - spent} wei ` +
+        `for the last ${config.withdrawalWindowSeconds}s`,
+    );
+  }
+}
+
 export function parseAmountWei(amountWei: string): bigint {
   let value: bigint;
 
@@ -99,12 +149,17 @@ export async function buildWithdrawalTransaction(
 
   const toAddress = normalizeDestinationAddress(request.toAddress);
   const value = parseAmountWei(request.amountWei);
+
   assertWithinNetworkValueLimit(value);
+  assertWithinConfiguredValueLimit(value);
+  assertDestinationAllowed(toAddress);
+  assertWithinVelocityLimit(wallet.id, value);
+
   const signer = getSignerForIndex(request.fromWalletIndex);
   const provider = getProvider();
 
   const [nonce, feeData, balance] = await Promise.all([
-    provider.getTransactionCount(wallet.address, "pending"),
+    allocateNonce(request.fromWalletIndex, wallet.address, provider),
     provider.getFeeData(),
     provider.getBalance(wallet.address),
   ]);
@@ -171,15 +226,24 @@ export async function createWithdrawal(
   }
 
   const provider = getProvider();
-  const response = await provider.broadcastTransaction(built.serialized);
+  let txHash: string;
+
+  try {
+    const response = await provider.broadcastTransaction(built.serialized);
+    txHash = response.hash;
+  } catch (error) {
+    // Nothing was sent, so hand the nonce back for the next attempt.
+    releaseNonce(request.fromWalletIndex, built.nonce);
+    throw error;
+  }
 
   const wallet = getWalletByIndex(request.fromWalletIndex)!;
-  recordOutflow(wallet.id, built.value, response.hash);
+  recordOutflow(wallet.id, built.value, txHash, request.actor ?? null);
   await syncWalletBalance(wallet);
 
   return {
     built,
     broadcast: true,
-    txHash: response.hash,
+    txHash,
   };
 }

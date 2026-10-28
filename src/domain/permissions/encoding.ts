@@ -31,6 +31,7 @@ import {
   ZeroAddress,
   ZeroHash,
 } from "ethers";
+import { canonicalJson } from "../../util/canonical.js";
 import type {
   Hex,
   Permission,
@@ -59,29 +60,6 @@ export const ACTION_TYPEHASH = keccak256(
     "SessionAction(bytes32 permissionsContextHash,address to,uint256 value,bytes32 dataHash,uint256 nonce)",
   ),
 );
-
-/**
- * JSON with object keys sorted recursively. Policy data is arbitrary JSON, so
- * it needs a canonical form before it is hashed or the same policy could
- * produce two different digests.
- */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value ?? null) ?? "null";
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-
-  return `{${entries
-    .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
-    .join(",")}}`;
-}
 
 /** Accepts either a 4-byte selector (`0x12345678`) or a full signature. */
 export function selectorOf(signature?: string): Hex {

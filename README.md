@@ -442,6 +442,9 @@ Revokes a session. Revocation is terminal; later redemptions fail.
 Checks the session, the permission type and the policies, then signs the action
 digest with the session key and builds the transfer with the account key.
 
+Same headers as `POST /withdrawals`: `Authorization` when tokens are configured,
+and `Idempotency-Key` whenever `broadcast: true`.
+
 - `broadcast: false` (`200`) — authorisation only. Nothing is sent, and neither
   the spending cap nor the action nonce is consumed.
 - `broadcast: true` (`201`) — sends the transaction, records the outflow ledger
@@ -489,6 +492,30 @@ curl -s http://localhost:3000/permissions/1
 # 4. Revoke it
 curl -s -X POST http://localhost:3000/permissions/1/revoke
 ```
+
+## Withdrawable owner
+
+Withdrawals can be restricted to a fixed set of destinations via
+`WITHDRAWAL_ALLOWLIST`. The address configured in `.env.example` is the
+**withdrawable owner** — the destination this service is allowed to send funds
+to:
+
+```
+0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE
+```
+
+With the allowlist set, `POST /withdrawals` and `POST /permissions/:id/redeem`
+to any **other** address are rejected with `400` before anything is signed.
+Leave `WITHDRAWAL_ALLOWLIST` empty to allow any destination (the default when
+the variable is unset).
+
+Copy it into your `.env` to activate it:
+
+```bash
+cp .env.example .env   # then edit WALLET_MNEMONIC and the RPC url
+```
+
+Addresses are normalised to EIP-55 checksum form, so lowercase input matches.
 
 ## Funding test wallets
 

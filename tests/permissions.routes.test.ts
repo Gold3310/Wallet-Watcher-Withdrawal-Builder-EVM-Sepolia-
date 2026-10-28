@@ -143,7 +143,10 @@ describe("permissions routes", () => {
       `${baseUrl}/permissions/${body.session.id}/redeem`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "redeem-1",
+        },
         body: JSON.stringify({
           toAddress: DESTINATION,
           amountWei: parseEther("0.01").toString(),

@@ -34,9 +34,11 @@ import {
   getWalletByIndex,
   insertPermissionSession,
   PermissionSessionRow,
-  recordSessionRedemption,
+  releaseSessionSpend,
+  reserveSessionSpend,
   revokePermissionSession,
 } from "../../infra/db/database.js";
+import { canonicalJson } from "../../util/canonical.js";
 import { deriveWalletAtIndex } from "../wallet/wallet.service.js";
 import {
   createWithdrawal,
@@ -47,7 +49,6 @@ import {
 import {
   buildActionDigest,
   buildGrantDigest,
-  canonicalJson,
   decodePermissionsContext,
   encodePermissionsContext,
   hashPermissions,
@@ -86,6 +87,8 @@ export interface RedeemInput {
   toAddress: string;
   amountWei: string;
   broadcast: boolean;
+  /** Caller identity from the API token, recorded on the outflow ledger entry. */
+  actor?: string | null;
 }
 
 export interface RedeemResult {
@@ -406,11 +409,32 @@ export async function redeemPermission(
 
   const cap = spendingCapOf(permissions);
   const spent = BigInt(row.spent_wei);
+
+  // Read-only check so a build-only redemption still reports a breach up front.
   if (cap !== null && spent + value > cap) {
     throw new Error(
       `Amount ${value} wei exceeds the remaining spending cap of ${cap - spent} wei`,
     );
   }
+
+  // Broadcasts then reserve spend and claim the action nonce atomically, before
+  // any funds move, so two concurrent redemptions cannot both read the same
+  // spent_wei and both pass the check above. Build-only redemptions move
+  // nothing, so they consume neither the cap nor the nonce.
+  const reservation = input.broadcast
+    ? reserveSessionSpend({
+        id: row.id,
+        amountWei: value.toString(),
+        cap,
+        now: nowSeconds(),
+      })
+    : null;
+
+  if (reservation && !reservation.ok) {
+    throw new Error(reservation.reason!);
+  }
+
+  const actionNonce = reservation ? reservation.nonce : row.nonce;
 
   const accountWallet = deriveWalletAtIndex(config.walletMnemonic, wallet.index);
   const sessionWallet = deriveSessionWallet(accountWallet.privateKey, row.session_seed);
@@ -442,7 +466,7 @@ export async function redeemPermission(
     to,
     value,
     data: NATIVE_TRANSFER_CALLDATA,
-    nonce: row.nonce,
+    nonce: actionNonce,
   });
 
   const sessionKeySignature = (await sessionWallet.signMessage(
@@ -460,29 +484,32 @@ export async function redeemPermission(
     );
   }
 
-  const withdrawal = await createWithdrawal({
-    fromWalletIndex: wallet.index,
-    toAddress: to,
-    amountWei: value.toString(),
-    broadcast: input.broadcast,
-  });
+  try {
+    const withdrawal = await createWithdrawal({
+      fromWalletIndex: wallet.index,
+      toAddress: to,
+      amountWei: value.toString(),
+      broadcast: input.broadcast,
+      actor: input.actor ?? null,
+    });
 
-  // Only broadcast redemptions move funds, so only they consume the cap and
-  // burn the nonce. Build-only redemptions are side-effect free.
-  if (input.broadcast) {
-    recordSessionRedemption(row.id, (spent + value).toString());
+    return {
+      session: getSession(row.id),
+      authorization: {
+        actionDigest,
+        nonce: actionNonce,
+        sessionKeySignature,
+        recoveredSigner,
+      },
+      withdrawal,
+    };
+  } catch (error) {
+    // Nothing moved, so give the reservation back.
+    if (reservation) {
+      releaseSessionSpend(row.id, value.toString());
+    }
+    throw error;
   }
-
-  return {
-    session: getSession(row.id),
-    authorization: {
-      actionDigest,
-      nonce: row.nonce,
-      sessionKeySignature,
-      recoveredSigner,
-    },
-    withdrawal,
-  };
 }
 
 function assertSessionUsable(row: PermissionSessionRow): void {
