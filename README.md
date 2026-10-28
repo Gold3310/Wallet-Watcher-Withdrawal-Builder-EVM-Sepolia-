@@ -901,6 +901,60 @@ transfers *into the hubPool* and nothing else.
 Being the owner of this contract is not being a holder of the token. Only
 holders can redeem the ETH.
 
+## Your own token: deploy, mint, redeem
+
+The tracked contract belongs to someone else, and every balance in it is theirs.
+No role, key or amount of tooling reaches it. So instead of watching a balance
+you cannot touch, deploy the same mechanics under your own key and run the whole
+lifecycle yourself.
+
+`contracts/WatcherWeth.sol` is a wrapped-ether token you deploy and own:
+
+- **Minting is depositing.** `deposit()` locks ETH and mints the same amount.
+- **Redeeming is withdrawing.** `withdraw(uint256)` is ungated: it burns the
+  token and returns the ETH. Nobody, including the owner, can block a holder's
+  redemption.
+- **Always fully backed.** `totalSupply` equals the ETH the contract holds.
+  There is deliberately **no owner-mint** — a supply you could conjure without
+  backing is a supply you cannot honour when someone redeems it. That is a
+  property, not an omission.
+- **You are the owner.** The deployer becomes `owner`, which is the reachable
+  version of "a wallet that owns the contract".
+
+```bash
+npm run token:compile                                        # regenerate the artifact
+npm run token:deploy -- --index 0                            # plan: address + gas, sends nothing
+npm run token:deploy -- --index 0 --broadcast                # deploy for real
+```
+
+Fund the deployer from a [Sepolia faucet](https://sepoliafaucet.com) first — an
+unfunded account cannot pay gas. Planning and broadcasting are separate calls
+because a deploy cannot be undone; you see the predicted address and the gas
+before you pay.
+
+Then point the service at it and mint:
+
+```bash
+TRACKED_CONTRACT=<deployed address>
+npm run token:mint -- --contract <address> --amount 0.01 --index 0 --broadcast
+GET  /assets          # your balance, the backing, whether it is fully covered
+POST /assets/unwrap   # burn wWETH, take the ETH back out
+```
+
+The whole reporting stack works against it as-is: it has no `hubPool` or
+`proposers`, so the service reports no transfer restriction rather than guessing.
+
+**This is your token. It is not Across' Bond Token**, it is not affiliated with
+Across or Risk Labs, and it must never be presented as either — not in a UI, not
+to a counterparty, not in a listing. The name and symbol are deliberately
+distinct so the two cannot be confused.
+
+One trap worth knowing: `token:mint` points at any WETH-style contract, and
+`deposit()` on the tracked contract is ungated, so it works there too. It is
+also circular — you get back exactly the ETH you lock, and no claim on the
+reserve already sitting there. The script says so when you aim it at the tracked
+address.
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.
