@@ -12,6 +12,11 @@ import {
 const TEST_MNEMONIC =
   "test test test test test test test test test test test junk";
 
+/** The BondToken contract — a contract, so it has no private key at all. */
+const CONTRACT_ADDRESS = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
+/** The deployer — an EOA whose key belongs to whoever deployed the contract. */
+const CREATOR_ADDRESS = "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";
+
 /** Enough of a .gitignore to exercise the coverage check. */
 const GITIGNORE = ["node_modules/", "dist/", ".env", "keys/", "# a comment"].join(
   "\n",
@@ -52,6 +57,41 @@ describe("deriving a wallet key file", () => {
   it("carries a warning about what the key is", () => {
     const keyFile = buildWalletKeyFile(TEST_MNEMONIC, 0);
     expect(keyFile.warning).toMatch(/Never commit it/);
+  });
+});
+
+describe("rejecting things that look like seeds but are not", () => {
+  it("rejects an address, and explains why", () => {
+    expect(() => buildWalletKeyFile(CONTRACT_ADDRESS, 0)).toThrow(
+      /is an ADDRESS, not a mnemonic/,
+    );
+    // The explanation is the point: a contract has no key to derive at all.
+    expect(() => buildWalletKeyFile(CONTRACT_ADDRESS, 0)).toThrow(
+      /contracts are controlled by their code/,
+    );
+  });
+
+  it("rejects every address shape, not just the tracked contract", () => {
+    expect(() => buildWalletKeyFile(CREATOR_ADDRESS, 0)).toThrow(
+      /is an ADDRESS, not a mnemonic/,
+    );
+    expect(() =>
+      buildWalletKeyFile("0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce", 0),
+    ).toThrow(/is an ADDRESS, not a mnemonic/);
+  });
+
+  it("rejects a raw private key", () => {
+    const key = "11".repeat(32);
+    expect(() => buildWalletKeyFile(key, 0)).toThrow(
+      /private key, not a BIP-39 mnemonic/,
+    );
+    expect(() => buildWalletKeyFile(`0x${key}`, 0)).toThrow(
+      /private key, not a BIP-39 mnemonic/,
+    );
+  });
+
+  it("accepts a real mnemonic", () => {
+    expect(() => buildWalletKeyFile(TEST_MNEMONIC, 0)).not.toThrow();
   });
 });
 

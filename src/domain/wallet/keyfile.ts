@@ -31,10 +31,49 @@ export interface WalletKeyFile {
   warning: string;
 }
 
+/**
+ * Rejects the two things people reach for by mistake, with an explanation
+ * rather than a stack trace.
+ *
+ * Both mistakes come from the same inversion. Derivation runs
+ * mnemonic -> private key -> address. An address is the OUTPUT of that chain,
+ * never an input to it, and a private key is a leaf — it controls one address
+ * and derives nothing further.
+ */
+export function assertUsableAsSeed(raw: string): void {
+  const value = raw.trim();
+
+  if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error(
+      `${value} is an ADDRESS, not a mnemonic.\n\n` +
+        "Addresses are the output of derivation, never the input: mnemonic -> " +
+        "private key -> address runs one direction only, and recovering a key " +
+        "from an address is exactly what public-key cryptography makes " +
+        "infeasible.\n\n" +
+        "If that address is a contract, there is no private key for it at all — " +
+        "contracts are controlled by their code, not by a key, so there is " +
+        "nothing to derive even in principle.\n\n" +
+        "If it is a wallet you control, what you need is the mnemonic or private " +
+        "key that created it. Neither can be recovered from the address alone.",
+    );
+  }
+
+  if (/^(0x)?[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(
+      "That is a 32-byte private key, not a BIP-39 mnemonic.\n\n" +
+        "A private key is a leaf: it controls exactly one address and derives " +
+        "nothing beyond it. To derive a family of wallets you need the seed — " +
+        "the 12 or 24 words — that generated them.",
+    );
+  }
+}
+
 export function buildWalletKeyFile(
   mnemonic: string,
   index: number,
 ): WalletKeyFile {
+  assertUsableAsSeed(mnemonic);
+
   const wallet = deriveWalletAtIndex(mnemonic, index);
 
   return {

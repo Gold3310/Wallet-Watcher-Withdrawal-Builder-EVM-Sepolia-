@@ -818,6 +818,21 @@ for a previous owner, or for any address whose seed you do not already hold.
 
 What it *can* do is derive the next wallet from a mnemonic you already have.
 
+Two specific cases, because the reasons they fail are different:
+
+- **A contract has no private key at all.** `0xee1DC6BC…` is the BondToken
+  contract. Contracts are controlled by their code, not by a key. There is no
+  key to derive, to recover, or to lose — for anyone, ever. The concept simply
+  does not apply to a contract.
+- **An EOA's key belongs to whoever created it.** `0x9A8f92a8…` deployed that
+  contract. The address is public; its private key is not derivable from it, not
+  by this tool and not by any other. Only the party that generated it has it.
+
+`npm run wallet:derive` detects an address passed as the seed and explains this
+instead of failing with a stack trace. It rejects a raw 32-byte private key for
+a related reason: a private key is a leaf — it controls exactly one address and
+derives nothing beyond it.
+
 **That wallet starts at zero.** It is a brand new address with no history and no
 balance. It grants access to nothing that exists today. If a balance sits at some
 other address, only the key for *that* address can move it — deriving a fresh

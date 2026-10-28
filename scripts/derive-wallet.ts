@@ -81,26 +81,29 @@ if (!existsSync(gitignorePath)) {
 }
 
 const outPath = arg("out") ?? path.join("keys", `wallet-${index}.json`);
-const keyFile = buildWalletKeyFile(mnemonic.trim(), index);
 
 try {
+  // Inside the try on purpose: if the seed is an address or a raw key, the
+  // explanation is the useful output, not a stack trace.
+  const keyFile = buildWalletKeyFile(mnemonic.trim(), index);
+
   writeWalletKeyFile(path.resolve(outPath), keyFile, {
     gitignoreText: readFileSync(gitignorePath, "utf8"),
   });
+
+  console.log(`Derived wallet ${index}`);
+  console.log(`  address:     ${keyFile.address}`);
+  console.log(`  path:        ${keyFile.path}`);
+  console.log(`  private key: ${path.resolve(outPath)}  (0600, gitignored)`);
+  console.log("");
+  console.log("The private key is in that file. It was not printed on purpose:");
+  console.log("terminal output ends up in scrollback, logs and shell history.");
+  console.log("");
+  console.log("This address holds nothing yet. It is new.");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-
-console.log(`Derived wallet ${index}`);
-console.log(`  address:     ${keyFile.address}`);
-console.log(`  path:        ${keyFile.path}`);
-console.log(`  private key: ${path.resolve(outPath)}  (0600, gitignored)`);
-console.log("");
-console.log("The private key is in that file. It was not printed on purpose:");
-console.log("terminal output ends up in scrollback, logs and shell history.");
-console.log("");
-console.log("This address holds nothing yet. It is new.");
 
 const walletCount = Number(process.env.WALLET_COUNT ?? "5");
 
