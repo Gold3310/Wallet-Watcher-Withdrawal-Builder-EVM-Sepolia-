@@ -18,11 +18,17 @@ import { config } from "../../config/index.js";
 import { getAllWallets, getWalletByIndex, WalletRow } from "../../infra/db/database.js";
 import { getProvider } from "../../infra/rpc/provider.js";
 import {
+  CONTRACT_CREATOR,
   hubPoolInterface,
   trackedContractInterface,
   TRANSFER_RESTRICTION,
   UNWRAP_FUNCTION,
 } from "./abi.js";
+import {
+  readHolderReport,
+  HolderOfInterest,
+  HolderReport,
+} from "./holders.js";
 
 export {
   CONTRACT_CREATOR,
@@ -34,6 +40,13 @@ export {
   TRANSFER_RESTRICTION,
   UNWRAP_FUNCTION,
 } from "./abi.js";
+
+export { readHolderReport } from "./holders.js";
+export type {
+  HolderBalance,
+  HolderOfInterest,
+  HolderReport,
+} from "./holders.js";
 
 /** Kept for callers that only want the ERC-20 subset. */
 export const erc20Interface = trackedContractInterface;
@@ -436,4 +449,67 @@ export function totalsOf(assets: WalletAssets[]): AssetTotals {
       totalFormatted: entry.decimals === null ? null : formatUnits(entry.total, entry.decimals),
     })),
   };
+}
+
+/**
+ * Every address worth asking about, in the order that makes the answer
+ * legible: the contract first, since its own balance is the claim being
+ * tested, then the roles people assume matter, then the wallets this service
+ * can actually sign for.
+ */
+export function holdersOfInterest(): HolderOfInterest[][] {
+  return config.trackedContracts.map((contract) => {
+    const holders: HolderOfInterest[] = [
+      {
+        label: "the contract itself (the ledger, not a holder)",
+        address: contract,
+        signableByService: false,
+      },
+    ];
+
+    if (config.ownerAddress) {
+      holders.push({
+        label: "service owner address (an API credential, not a token holder)",
+        address: config.ownerAddress,
+        signableByService: false,
+      });
+    }
+
+    holders.push({
+      label: "contract deployer",
+      address: CONTRACT_CREATOR,
+      signableByService: false,
+    });
+
+    for (const wallet of getAllWallets()) {
+      holders.push({
+        label: `derived wallet ${wallet.index}`,
+        address: wallet.address,
+        signableByService: true,
+      });
+    }
+
+    return holders;
+  });
+}
+
+/**
+ * Who holds the tracked token, and therefore who can redeem the contract's ETH.
+ *
+ * The contract's own balance is included deliberately: the belief that a
+ * contract holds the balances in its own `balanceOf` mapping is the one that
+ * makes this look solvable when it is not, and it is settled by reading
+ * `balanceOf(<the contract>)` rather than by argument.
+ */
+export async function getHolderReports(
+  provider?: CallProvider,
+): Promise<HolderReport[]> {
+  const resolved = provider ?? (getProvider() as unknown as CallProvider);
+  const holderSets = holdersOfInterest();
+
+  return Promise.all(
+    config.trackedContracts.map((contract, i) =>
+      readHolderReport(resolved, contract, holderSets[i]),
+    ),
+  );
 }

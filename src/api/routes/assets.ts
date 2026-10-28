@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from "express";
 import { config } from "../../config/index.js";
 import {
   getAllWalletAssets,
+  getHolderReports,
   getTrackedContractInfo,
   getWalletAssetsByIndex,
   totalsOf,
@@ -60,6 +61,38 @@ assetsRouter.get(
         trackedContracts: config.trackedContracts,
         contracts: await getTrackedContractInfo(),
         wallet: asset,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /assets/holders
+ *
+ * Answers the question that decides whether anything is reachable at all:
+ * who holds the tracked token.
+ *
+ * For a WETH-style token the answer is everything, because `withdraw()` is
+ * ungated and burns a balance to release ETH 1:1. Whoever holds the token can
+ * take the ETH; nobody else can, whatever role they hold.
+ *
+ * The report deliberately includes the contract's own balance in itself, since
+ * the belief that a contract holds the balances recorded in its `balanceOf`
+ * mapping is the one that makes this look solvable when it is not. That belief
+ * is settled here by reading `balanceOf(<the contract>)` rather than by
+ * arguing about it.
+ */
+assetsRouter.get(
+  "/holders",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({
+        network: config.network,
+        chainId: config.chainId,
+        trackedContracts: config.trackedContracts,
+        reports: await getHolderReports(),
       });
     } catch (error) {
       next(error);

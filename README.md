@@ -838,6 +838,43 @@ balance. It grants access to nothing that exists today. If a balance sits at som
 other address, only the key for *that* address can move it — deriving a fresh
 wallet does not reach it.
 
+## The contract is the ledger, not the holder
+
+One misconception decides everything downstream, so it is worth stating plainly:
+that a contract holds the balances recorded in its own `balanceOf` mapping.
+
+It does not. That mapping is a ledger stored *in* the contract's storage. The
+keys are addresses; the values are amounts belonging to those addresses. The
+contract keeps the record — it does not own the entries. For the contract to hold
+its own token, `balanceOf(<the contract itself>)` would have to be greater than
+zero, which is a readable fact. `GET /assets/holders` reads it.
+
+This matters because of two properties of a WETH-style token:
+
+- `withdraw(uint256)` is **ungated**. Anyone holding a balance can call it.
+- It **burns** the balance and pays out ETH 1:1 from the contract's reserve.
+
+So "who can take the ETH?" and "who holds the token?" are the same question with
+the same answer. If no address you control holds ABT, the reserve is unreachable
+— not because a feature is missing, but because no path exists. Ownership does
+not help: `Ownable` has no withdraw. Being the deployer does not help. Deriving
+a wallet does not help. Only holding the balance does.
+
+### GET /assets/holders
+
+Reads `balanceOf` for every address worth asking about — the contract itself
+first, then the service owner, the deployer, then each derived wallet — and
+reports:
+
+- each balance, its share of supply, and the ETH it is redeemable for right now
+- whether `withdraw()` for that balance would succeed today, capped at the
+  reserve — a balance backed by no ETH is a claim on nothing
+- whether this service can sign for the address. A balance it cannot sign for is
+  a fact to report, not a balance it can move
+- `unaccountedFor`: supply held outside the listed addresses. When that is the
+  whole supply, none of these addresses holds the token
+- a plain `verdict` reading the numbers, so nothing has to be inferred
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.
