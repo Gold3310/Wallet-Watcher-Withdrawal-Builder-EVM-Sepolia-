@@ -9,6 +9,7 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Balance-change ledger (inflows from tracking, outflows only on broadcast)
 - REST API for wallet balances and withdrawals
 - ERC-7715 session permissions (grant, inspect, revoke, redeem) with expiry and spending policies
+- Asset reporting: native and ERC-20 balances across every wallet, with totals
 - Runs on Sepolia or mainnet, with per-chain guardrails when funds are real
 - Unit tests for wallet derivation, transaction building, permissions and network config
 
@@ -208,6 +209,7 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 | `WITHDRAWAL_MAX_VALUE_WEI` | Per-transaction ceiling on any chain | unset |
 | `WITHDRAWAL_MAX_PER_WINDOW_WEI` | Max outflow per wallet per window | unset |
 | `WITHDRAWAL_WINDOW_SECONDS` | Velocity window | `86400` |
+| `TRACKED_TOKENS` | ERC-20 contracts to report in `GET /assets` | the token from `evidence/` |
 | `WALLET_MNEMONIC` | BIP-39 mnemonic for wallet derivation | required |
 | `WALLET_COUNT` | Number of wallets to manage (1–20) | `5` |
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
@@ -243,6 +245,70 @@ Example response:
   ]
 }
 ```
+
+### `GET /assets`
+
+Native **and** ERC-20 balances, read live from the chain. Use `?walletIndex=N`
+for a single wallet, or omit it for every wallet plus totals.
+
+Tracked tokens come from `TRACKED_TOKENS` (comma-separated contract addresses).
+The token in the committed event-log evidence is configured by default:
+
+```
+TRACKED_TOKENS=0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed
+```
+
+Read-only `eth_call` — it signs nothing and does not touch the persisted
+balances, which the poller owns.
+
+```json
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "walletCount": 5,
+  "trackedTokens": ["0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed"],
+  "totals": {
+    "nativeWei": "5000000000000000000",
+    "nativeEth": "5.0",
+    "tokens": [
+      {
+        "address": "0x32c3ce734cf52f9429c8a8ec2982e4fd714960ed",
+        "symbol": "TST",
+        "decimals": 18,
+        "totalRaw": "1234500000000000000000",
+        "totalFormatted": "1234.5"
+      }
+    ]
+  },
+  "wallets": [
+    {
+      "index": 0,
+      "address": "0x...",
+      "nativeWei": "1000000000000000000",
+      "nativeEth": "1.0",
+      "tokens": [
+        {
+          "address": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+          "symbol": "TST",
+          "decimals": 18,
+          "balanceRaw": "1234500000000000000000",
+          "balanceFormatted": "1234.5",
+          "error": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+Two behaviours worth knowing, because real tokens are messy:
+
+- `symbol()` and `decimals()` are treated as **optional**. If either reverts you
+  get `null` for that field, but the balance is still reported — a token with a
+  broken label does not disappear from the report.
+- If `balanceOf` reverts, that token reports `error` and a zero balance rather
+  than failing the whole request. A `balanceOf` failure across **every** token
+  usually means the RPC is pointed at the wrong chain.
 
 ### `POST /withdrawals`
 

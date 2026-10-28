@@ -1,5 +1,6 @@
 import express, { NextFunction, Request, Response } from "express";
 import { authenticate } from "./middleware/auth.js";
+import { assetsRouter } from "./routes/assets.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { walletsRouter } from "./routes/wallets.js";
 import { withdrawalsRouter } from "./routes/withdrawals.js";
@@ -16,6 +17,7 @@ export function createApp() {
 
   app.use(authenticate);
 
+  app.use("/assets", assetsRouter);
   app.use("/permissions", permissionsRouter);
   app.use("/wallets", walletsRouter);
   app.use("/withdrawals", withdrawalsRouter);

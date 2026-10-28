@@ -209,6 +209,8 @@ export const config = {
   apiTokens: parseApiTokens(process.env.API_TOKENS),
   /** Destinations withdrawals may target. Empty means unrestricted. */
   withdrawalAllowlist: parseAddressList(process.env.WITHDRAWAL_ALLOWLIST),
+  /** ERC-20 contracts to report balances for in GET /assets. */
+  trackedTokens: parseAddressList(process.env.TRACKED_TOKENS),
   /** Optional per-transaction ceiling on any network. */
   withdrawalMaxValueWei: parseOptionalWei(
     "WITHDRAWAL_MAX_VALUE_WEI",
