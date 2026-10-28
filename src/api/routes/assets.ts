@@ -1,10 +1,21 @@
 import { NextFunction, Request, Response, Router } from "express";
+import { config } from "../../config/index.js";
 import {
   getAllWalletAssets,
+  getTrackedContractInfo,
   getWalletAssetsByIndex,
   totalsOf,
 } from "../../domain/assets/asset.service.js";
-import { config } from "../../config/index.js";
+import {
+  createUnwrap,
+  UnwrapRequest,
+} from "../../domain/assets/unwrap.service.js";
+import { actorId } from "../middleware/auth.js";
+import {
+  abandonIdempotentRequest,
+  beginIdempotentRequest,
+  completeIdempotentRequest,
+} from "../middleware/idempotency.js";
 
 export const assetsRouter = Router();
 
@@ -28,6 +39,7 @@ assetsRouter.get(
           chainId: config.chainId,
           walletCount: assets.length,
           trackedContracts: config.trackedContracts,
+          contracts: await getTrackedContractInfo(),
           totals: totalsOf(assets),
           wallets: assets,
         });
@@ -46,6 +58,7 @@ assetsRouter.get(
         network: config.network,
         chainId: config.chainId,
         trackedContracts: config.trackedContracts,
+        contracts: await getTrackedContractInfo(),
         wallet: asset,
       });
     } catch (error) {
@@ -53,3 +66,89 @@ assetsRouter.get(
     }
   },
 );
+
+interface UnwrapBody {
+  fromWalletIndex?: number;
+  amountWei?: string;
+  broadcast?: boolean;
+}
+
+/**
+ * POST /assets/unwrap
+ *
+ * Turns a tracked WETH-style balance back into ETH in the same wallet, because
+ * the tracked contract's transfer() is gated and an ordinary withdrawal would
+ * revert with "Transfer not permitted".
+ *
+ * The ETH lands in the wallet that held the balance. Move it on with
+ * POST /withdrawals. Nothing is broadcast unless `broadcast` is true.
+ */
+assetsRouter.post(
+  "/unwrap",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const request = validateUnwrapRequest(req.body as UnwrapBody);
+      request.actor = actorId(req);
+
+      const idempotency = beginIdempotentRequest(
+        req,
+        res,
+        "assets:unwrap",
+        request,
+        request.broadcast,
+      );
+
+      if (!idempotency) {
+        return;
+      }
+
+      try {
+        const result = await createUnwrap(request);
+        const status = result.broadcast ? 201 : 200;
+
+        const response = {
+          network: config.network,
+          chainId: config.chainId,
+          broadcast: result.broadcast,
+          txHash: result.txHash ?? null,
+          requestedBy: request.actor,
+          transaction: result.built,
+        };
+
+        completeIdempotentRequest(idempotency, status, response);
+        res.status(status).json(response);
+      } catch (error) {
+        abandonIdempotentRequest(idempotency);
+        next(error);
+      }
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+function validateUnwrapRequest(body: UnwrapBody): UnwrapRequest {
+  if (body.fromWalletIndex === undefined) {
+    throw new Error("fromWalletIndex is required");
+  }
+
+  if (!Number.isInteger(body.fromWalletIndex)) {
+    throw new Error("fromWalletIndex must be an integer");
+  }
+
+  if (body.fromWalletIndex < 0 || body.fromWalletIndex >= config.walletCount) {
+    throw new Error(
+      `fromWalletIndex must be between 0 and ${config.walletCount - 1}`,
+    );
+  }
+
+  if (!body.amountWei) {
+    throw new Error("amountWei is required");
+  }
+
+  return {
+    fromWalletIndex: body.fromWalletIndex,
+    amountWei: body.amountWei,
+    broadcast: body.broadcast ?? false,
+  };
+}

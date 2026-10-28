@@ -280,6 +280,21 @@ balances, which the poller owns.
   "chainId": 11155111,
   "walletCount": 5,
   "trackedContracts": ["0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea"],
+  "contracts": [
+    {
+      "address": "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea",
+      "name": "Wrapped Ether",
+      "symbol": "WETH",
+      "decimals": 18,
+      "totalSupplyRaw": "1000000000000000000000",
+      "totalSupplyFormatted": "1000.0",
+      "owner": "0x…",
+      "hubPool": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
+      "transfersRestricted": true,
+      "unwrapFunction": "withdraw",
+      "error": null
+    }
+  ],
   "totals": {
     "nativeWei": "5000000000000000000",
     "nativeEth": "5.0",
@@ -306,6 +321,7 @@ balances, which the poller owns.
           "decimals": 18,
           "balanceRaw": "1234500000000000000000",
           "balanceFormatted": "1234.5",
+          "canTransfer": false,
           "error": null
         }
       ]
@@ -322,6 +338,52 @@ Two behaviours worth knowing, because real tokens are messy:
 - If `balanceOf` reverts, that token reports `error` and a zero balance rather
   than failing the whole request. A `balanceOf` failure across **every** token
   usually means the RPC is pointed at the wrong chain.
+
+### The tracked contract gates transfers
+
+`0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea` is a WETH-style wrapper, not a
+plain ERC-20. Its `transfer` and `transferFrom` revert with **"Transfer not
+permitted"** unless the sender is the `hubPool`, an approved proposer, or the
+hubPool authorises the move. That is confirmed against the deployed bytecode,
+not assumed from the ABI.
+
+What follows from that:
+
+- **A balance you hold is not automatically a balance you can send.** Every
+  token entry in `GET /assets` carries `canTransfer`, so the restriction is
+  visible instead of becoming a surprise at signing time.
+- The contract's `owner()` is an on-chain role that can call
+  `setProposer(address,bool)`. **It is not this service's `OWNER_ADDRESS`** —
+  the two are unrelated. Becoming the contract's owner requires the current
+  contract owner to call `transferOwnership`; no configuration file here can
+  do it, and this service has no such key.
+- Its `hubPool` is pinned at construction to `0xc186fA914353c44b2E33eBE05f21846F1048bEda`
+  — Across Protocol's Hub Pool V2 on **Ethereum mainnet**. This is a mainnet
+  contract. Tracking it on Sepolia reports an empty account.
+
+The way out of a restricted balance is `withdraw(uint256)`, which is **not**
+gated: it burns the caller's wrapped balance and sends that much ETH to the
+caller. That is what `POST /assets/unwrap` does.
+
+### `POST /assets/unwrap`
+
+Step one of two. Unwrap a wrapped balance into ETH **in the same wallet**, then
+move it on with `POST /withdrawals`.
+
+```bash
+curl -s localhost:3000/assets/unwrap \
+  -H "Authorization: Bearer $OWNER_SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"fromWalletIndex":0,"amountWei":"1000000000000000000","broadcast":false}'
+```
+
+- Reads the wrapped balance **before** building, so an over-amount fails here
+  rather than reverting on chain and burning gas.
+- Refuses to guess: exactly one contract must be tracked, and the amount is
+  explicit. There is no "unwrap everything".
+- `broadcast` defaults to `false`. Nothing is sent unless you ask.
+- Records **no** ledger outflow. The value never leaves the wallet — it changes
+  shape. Step two records the movement when the ETH actually goes out.
 
 ### `POST /withdrawals`
 

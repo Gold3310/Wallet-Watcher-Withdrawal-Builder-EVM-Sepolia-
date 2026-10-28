@@ -4,22 +4,35 @@
  * Read-only `eth_call` against the contracts in `TRACKED_CONTRACT`. Nothing
  * here signs or sends.
  *
+ * Calls are encoded with the tracked contract's real ABI rather than a minimal
+ * ERC-20 fragment, because that contract is not a plain ERC-20 — its
+ * `transfer`/`transferFrom` are gated, so a balance is not the same thing as a
+ * spendable balance. Reporting answers `canTransfer` alongside the amount.
+ *
  * Metadata calls are treated as optional on purpose: plenty of real tokens have
  * a `symbol()` or `decimals()` that reverts or returns something odd, and a
  * broken label should not stop the balance from being reported.
  */
-import { formatEther, formatUnits, Interface } from "ethers";
+import { formatEther, formatUnits } from "ethers";
 import { config } from "../../config/index.js";
 import { getAllWallets, getWalletByIndex, WalletRow } from "../../infra/db/database.js";
 import { getProvider } from "../../infra/rpc/provider.js";
+import {
+  trackedContractInterface,
+  TRANSFERS_RESTRICTED,
+  UNWRAP_FUNCTION,
+} from "./abi.js";
 
-export const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-] as const;
+export {
+  HUB_POOL_IMMUTABLE,
+  TRANSFERS_RESTRICTED,
+  TRACKED_CONTRACT_ABI,
+  UNWRAP_FUNCTION,
+  trackedContractInterface,
+} from "./abi.js";
 
-export const erc20Interface = new Interface(ERC20_ABI as unknown as string[]);
+/** Kept for callers that only want the ERC-20 subset. */
+export const erc20Interface = trackedContractInterface;
 
 export interface CallProvider {
   call(tx: { to: string; data: string }): Promise<string>;
@@ -34,6 +47,31 @@ export interface TokenAsset {
   balanceRaw: string;
   /** Human-readable balance, or null when decimals could not be read. */
   balanceFormatted: string | null;
+  /**
+   * Whether this holder may move the balance with `transfer`. Null when the
+   * contract does not expose a proposer allowlist, so the answer is unknown
+   * rather than assumed to be yes.
+   */
+  canTransfer: boolean | null;
+  error: string | null;
+}
+
+/** Everything about a tracked contract that is not specific to a holder. */
+export interface ContractInfo {
+  address: string;
+  name: string | null;
+  symbol: string | null;
+  decimals: number | null;
+  totalSupplyRaw: string | null;
+  totalSupplyFormatted: string | null;
+  /** On-chain owner. This is NOT the same thing as this service's owner. */
+  owner: string | null;
+  /** The hubPool the contract was deployed against, pinned at construction. */
+  hubPool: string | null;
+  /** True when transfer/transferFrom are gated. Static per ABI. */
+  transfersRestricted: boolean;
+  /** Function to call to turn a restricted balance back into ETH. */
+  unwrapFunction: string | null;
   error: string | null;
 }
 
@@ -65,18 +103,101 @@ async function callOrNull<T>(fn: () => Promise<T>): Promise<T | null> {
   }
 }
 
+/** Raw token balance, or null when the call fails. */
+export async function readTokenBalanceRaw(
+  provider: CallProvider,
+  token: string,
+  holder: string,
+): Promise<bigint | null> {
+  return callOrNull(async () => {
+    const result = await provider.call({
+      to: token,
+      data: trackedContractInterface.encodeFunctionData("balanceOf", [holder]),
+    });
+    return trackedContractInterface.decodeFunctionResult(
+      "balanceOf",
+      result,
+    )[0] as bigint;
+  });
+}
+
+async function readUint(
+  provider: CallProvider,
+  token: string,
+  fn: "decimals" | "totalSupply",
+): Promise<bigint | null> {
+  return callOrNull(async () => {
+    const result = await provider.call({
+      to: token,
+      data: trackedContractInterface.encodeFunctionData(fn),
+    });
+    return trackedContractInterface.decodeFunctionResult(fn, result)[0] as bigint;
+  });
+}
+
+async function readString(
+  provider: CallProvider,
+  token: string,
+  fn: "symbol" | "name",
+): Promise<string | null> {
+  return callOrNull(async () => {
+    const result = await provider.call({
+      to: token,
+      data: trackedContractInterface.encodeFunctionData(fn),
+    });
+    return trackedContractInterface.decodeFunctionResult(fn, result)[0] as string;
+  });
+}
+
+async function readAddress(
+  provider: CallProvider,
+  token: string,
+  fn: "owner" | "hubPool",
+): Promise<string | null> {
+  return callOrNull(async () => {
+    const result = await provider.call({
+      to: token,
+      data: trackedContractInterface.encodeFunctionData(fn),
+    });
+    return trackedContractInterface.decodeFunctionResult(fn, result)[0] as string;
+  });
+}
+
+/** True when the contract's allowlist permits this holder to transfer. */
+async function readCanTransfer(
+  provider: CallProvider,
+  token: string,
+  holder: string,
+  hubPool: string | null,
+): Promise<boolean | null> {
+  const proposer = await callOrNull(async () => {
+    const result = await provider.call({
+      to: token,
+      data: trackedContractInterface.encodeFunctionData("proposers", [holder]),
+    });
+    return trackedContractInterface.decodeFunctionResult(
+      "proposers",
+      result,
+    )[0] as boolean;
+  });
+
+  if (proposer === null) {
+    return null;
+  }
+
+  // The hubPool itself is always allowed to move tokens, allowlist or not.
+  return (
+    proposer ||
+    (hubPool !== null && holder.toLowerCase() === hubPool.toLowerCase())
+  );
+}
+
 export async function readTokenAsset(
   provider: CallProvider,
   token: string,
   holder: string,
 ): Promise<TokenAsset> {
-  const balance = await callOrNull(async () => {
-    const result = await provider.call({
-      to: token,
-      data: erc20Interface.encodeFunctionData("balanceOf", [holder]),
-    });
-    return erc20Interface.decodeFunctionResult("balanceOf", result)[0] as bigint;
-  });
+  const balance = await readTokenBalanceRaw(provider, token, holder);
 
   if (balance === null) {
     return {
@@ -85,34 +206,68 @@ export async function readTokenAsset(
       decimals: null,
       balanceRaw: "0",
       balanceFormatted: null,
+      canTransfer: null,
       error: "balanceOf call failed — not a token, or the wrong chain",
     };
   }
 
-  const decimals = await callOrNull(async () => {
-    const result = await provider.call({
-      to: token,
-      data: erc20Interface.encodeFunctionData("decimals"),
-    });
-    return Number(erc20Interface.decodeFunctionResult("decimals", result)[0]);
-  });
-
-  const symbol = await callOrNull(async () => {
-    const result = await provider.call({
-      to: token,
-      data: erc20Interface.encodeFunctionData("symbol"),
-    });
-    return erc20Interface.decodeFunctionResult("symbol", result)[0] as string;
-  });
+  const hubPool = await readAddress(provider, token, "hubPool");
+  const [decimals, symbol, canTransfer] = await Promise.all([
+    readUint(provider, token, "decimals"),
+    readString(provider, token, "symbol"),
+    readCanTransfer(provider, token, holder, hubPool),
+  ]);
 
   return {
     address: token,
     symbol,
-    decimals,
+    decimals: decimals === null ? null : Number(decimals),
     balanceRaw: balance.toString(),
-    balanceFormatted: decimals === null ? null : formatUnits(balance, decimals),
+    balanceFormatted: decimals === null ? null : formatUnits(balance, Number(decimals)),
+    canTransfer,
     error: null,
   };
+}
+
+/** Contract-level facts: metadata, supply, owner and the transfer gate. */
+export async function readContractInfo(
+  provider: CallProvider,
+  token: string,
+): Promise<ContractInfo> {
+  const [name, symbol, decimals, totalSupply, owner, hubPool] = await Promise.all([
+    readString(provider, token, "name"),
+    readString(provider, token, "symbol"),
+    readUint(provider, token, "decimals"),
+    readUint(provider, token, "totalSupply"),
+    readAddress(provider, token, "owner"),
+    readAddress(provider, token, "hubPool"),
+  ]);
+
+  return {
+    address: token,
+    name,
+    symbol,
+    decimals: decimals === null ? null : Number(decimals),
+    totalSupplyRaw: totalSupply === null ? null : totalSupply.toString(),
+    totalSupplyFormatted:
+      totalSupply === null || decimals === null
+        ? null
+        : formatUnits(totalSupply, Number(decimals)),
+    owner,
+    hubPool,
+    transfersRestricted: TRANSFERS_RESTRICTED,
+    unwrapFunction: UNWRAP_FUNCTION,
+    error: null,
+  };
+}
+
+export async function getTrackedContractInfo(
+  provider?: CallProvider,
+): Promise<ContractInfo[]> {
+  const resolved = provider ?? (getProvider() as unknown as CallProvider);
+  return Promise.all(
+    config.trackedContracts.map((token) => readContractInfo(resolved, token)),
+  );
 }
 
 export async function getWalletAssets(
