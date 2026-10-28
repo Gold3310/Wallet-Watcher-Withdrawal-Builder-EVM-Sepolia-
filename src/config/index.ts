@@ -178,11 +178,20 @@ function parseSoleOwner(raw: string | undefined): string | null {
 /**
  * Contracts this service reports on in `GET /assets`.
  *
- * `TRACKED_CONTRACT` is the current name. `TRACKED_TOKENS` is accepted as a
- * deprecated alias so an existing `.env` does not silently stop tracking — it
- * warns instead of quietly ignoring a configured value.
+ * Contract addresses are chain-specific: an address that holds a token on
+ * Sepolia is usually an empty account on mainnet. So a per-network override
+ * (`MAINNET_TRACKED_CONTRACT` / `SEPOLIA_TRACKED_CONTRACT`) wins over the
+ * chain-agnostic `TRACKED_CONTRACT`, which wins over the deprecated
+ * `TRACKED_TOKENS` alias. The alias warns rather than being ignored — a
+ * configured value that silently stops applying is how a deployment ends up
+ * reporting on nothing at all.
  */
-function parseTrackedContracts(): string[] {
+function parseTrackedContracts(network: NetworkName): string[] {
+  const overrideName =
+    network === "mainnet"
+      ? "MAINNET_TRACKED_CONTRACT"
+      : "SEPOLIA_TRACKED_CONTRACT";
+  const override = process.env[overrideName];
   const primary = process.env.TRACKED_CONTRACT;
   const legacy = process.env.TRACKED_TOKENS;
 
@@ -192,12 +201,14 @@ function parseTrackedContracts(): string[] {
     );
   }
 
-  const list = parseAddressList(
-    primary ?? legacy,
-    primary ? "TRACKED_CONTRACT" : "TRACKED_TOKENS",
-  );
+  const selected = override ?? primary ?? legacy;
+  const name = override
+    ? overrideName
+    : primary
+      ? "TRACKED_CONTRACT"
+      : "TRACKED_TOKENS";
 
-  return [...new Set(list)];
+  return [...new Set(parseAddressList(selected, name))];
 }
 
 function parseOptionalWei(name: string, raw: string | undefined): bigint | null {
@@ -264,7 +275,7 @@ export const config = {
   /** The sole address permitted to act. Null means any configured token may. */
   ownerAddress: parseSoleOwner(process.env.OWNER_ADDRESS),
   /** Contracts to report balances for in GET /assets. */
-  trackedContracts: parseTrackedContracts(),
+  trackedContracts: parseTrackedContracts(networkConfig.name),
   /** Optional per-transaction ceiling on any network. */
   withdrawalMaxValueWei: parseOptionalWei(
     "WITHDRAWAL_MAX_VALUE_WEI",
@@ -313,6 +324,21 @@ if (config.ownerAddress) {
       `API_TOKENS owner ${owners[0]} does not match OWNER_ADDRESS ${config.ownerAddress}.`,
     );
   }
+}
+
+// A contract address is only meaningful on one chain. Reporting on mainnet
+// using an address copied from a testnet silently returns empty balances, so
+// say so rather than leaving the operator to wonder.
+if (
+  !config.isTestnet &&
+  config.trackedContracts.length > 0 &&
+  !process.env.MAINNET_TRACKED_CONTRACT
+) {
+  console.warn(
+    `Tracking ${config.trackedContracts.join(", ")} on mainnet from ` +
+      "TRACKED_CONTRACT. Confirm that address exists on mainnet, or set " +
+      "MAINNET_TRACKED_CONTRACT if the two chains use different deployments.",
+  );
 }
 
 if (!Number.isInteger(config.withdrawalWindowSeconds) || config.withdrawalWindowSeconds <= 0) {

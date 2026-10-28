@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { getAddress } from "ethers";
 import { describe, expect, it } from "vitest";
 import {
   addressFromTopic,
@@ -16,11 +18,17 @@ import {
   verifyRow,
 } from "../src/domain/evidence/verify.js";
 
-const dataset = loadEvidence();
+// Synthetic fixture: no real event export ships with the repo, and none of
+// this data corresponds to anything on a chain.
+const dataset = loadEvidence(
+  fileURLToPath(new URL("./fixtures/erc20-events.sample.json", import.meta.url)),
+);
 const rows = dataset.rows;
 const first = rows[0]!;
-const hub = "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da";
-const hubChecksummed = "0xB4998DcCa90f1249bC4cF0DF2b732bf5034F82dA";
+const hub = "0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d";
+const hubChecksummed = getAddress(hub);
+/** Highest block in the fixture, returned by the mock provider as the head. */
+const HEAD_BLOCK = 1011;
 
 function providerFor(
   row: EventRow,
@@ -48,14 +56,14 @@ function providerFor(
   };
 }
 
-describe("evidence dataset", () => {
+describe("evidence fixture", () => {
   it("loads with the shape the analysis expects", () => {
     expect(dataset.rows.length).toBe(19);
     expect(dataset.tokenContract).toMatch(/^0x[0-9a-fA-F]{40}$/);
     expect(dataset.limitations.length).toBeGreaterThan(0);
   });
 
-  it("reproduces the counts from the source summary", () => {
+  it("summarises the fixture as expected", () => {
     const summary = summarize(rows);
 
     expect(summary.rows).toBe(19);
@@ -65,7 +73,7 @@ describe("evidence dataset", () => {
     expect(summary.uniqueBlockHashes).toBe(12);
     expect(summary.byEventType.Transfer).toBe(16);
     expect(summary.byEventType.Approval).toBe(3);
-    expect(summary.blockRange).toEqual({ from: 85921676, to: 86369971 });
+    expect(summary.blockRange).toEqual({ from: 1000, to: 1011 });
   });
 
   it("checksums addresses out of 32-byte topics", () => {
@@ -197,14 +205,14 @@ describe("on-chain verification", () => {
         }
         return { blockNumber: list[0]!.blockNumber, blockHash: list[0]!.blockHash, logs };
       },
-      getBlockNumber: async () => 86_369_971,
+      getBlockNumber: async () => HEAD_BLOCK,
       getNetwork: async () => ({ chainId: 137 }),
     };
 
     const report = await verifyEvidence(rows, provider);
 
     expect(report.chainId).toBe(137);
-    expect(report.head).toBe(86_369_971);
+    expect(report.head).toBe(HEAD_BLOCK);
     expect(report.summary.VERIFIED).toBe(18);
     expect(report.summary.SKIPPED_INCOMPLETE).toBe(1);
     expect(report.summary.MISMATCH).toBe(0);

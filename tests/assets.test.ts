@@ -244,3 +244,74 @@ describe("asset reporting", () => {
     );
   });
 });
+
+describe("assets on mainnet", () => {
+  const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
+  const SECRET = "mainnet-owner-secret";
+
+  const MAINNET_ENV: Record<string, string | undefined> = {
+    CHAIN: "mainnet",
+    MAINNET_ENABLED: "true",
+    MAINNET_RPC_URL: "https://mainnet.example",
+    OWNER_ADDRESS: OWNER,
+    API_TOKENS: `${OWNER}:${SECRET}`,
+    TRACKED_CONTRACT: TOKEN,
+  };
+
+  it("resolves the mainnet contract override ahead of the shared one", async () => {
+    await withConfig(
+      {
+        ...MAINNET_ENV,
+        MAINNET_TRACKED_CONTRACT: OTHER_TOKEN,
+      },
+      async (config) => {
+        expect(config.trackedContracts).toEqual([OTHER_TOKEN]);
+      },
+    );
+  });
+
+  it("reports assets over HTTP behind the owner's credential", async () => {
+    await withConfig({ ...BASE_ENV, ...MAINNET_ENV }, async () => {
+      const { createApp } = await import("../src/api/app.js");
+      const { initializeWallets } = await import(
+        "../src/domain/balance/balance.service.js"
+      );
+      const { setProvider } = await import("../src/infra/rpc/provider.js");
+      const database = await import("../src/infra/db/database.js");
+
+      initializeWallets();
+      setProvider(
+        mockProvider({
+          balances: { [TOKEN.toLowerCase()]: parseUnits("7", 18) },
+          symbols: { [TOKEN.toLowerCase()]: "MNT" },
+        }) as never,
+      );
+
+      const app = createApp();
+      const server = await new Promise<import("node:http").Server>((resolve) => {
+        const started = app.listen(0, () => resolve(started));
+      });
+      const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+      try {
+        const anonymous = await fetch(`${baseUrl}/assets`);
+        expect(anonymous.status).toBe(401);
+
+        const response = await fetch(`${baseUrl}/assets`, {
+          headers: { authorization: `Bearer ${SECRET}` },
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.network).toBe("mainnet");
+        expect(body.chainId).toBe(1);
+        expect(body.trackedContracts).toEqual([TOKEN]);
+        expect(body.totals.tokens).toHaveLength(1);
+        expect(body.totals.tokens[0].symbol).toBe("MNT");
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        database.closeDatabase();
+      }
+    });
+  });
+});

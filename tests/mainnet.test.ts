@@ -21,6 +21,10 @@ const SEPOLIA_ENV = {
   WALLET_COUNT: "5",
   SEPOLIA_RPC_URL: "https://sepolia.example",
   DATABASE_PATH: ":memory:",
+  TRACKED_CONTRACT: undefined,
+  TRACKED_TOKENS: undefined,
+  MAINNET_TRACKED_CONTRACT: undefined,
+  SEPOLIA_TRACKED_CONTRACT: undefined,
 };
 
 const MAINNET_ENV = {
@@ -289,5 +293,52 @@ describe("database network binding", () => {
         database.closeDatabase();
       },
     );
+  });
+});
+
+describe("tracked contracts are resolved per network", () => {
+  const SHARED = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
+  const MAINNET_ONLY = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const SEPOLIA_ONLY = "0x2EF4c86Bdd42884339643D2beCB32988D90A46F4";
+
+  it("prefers MAINNET_TRACKED_CONTRACT on mainnet", async () => {
+    await withConfig(
+      {
+        ...MAINNET_ENV,
+        TRACKED_CONTRACT: SHARED,
+        MAINNET_TRACKED_CONTRACT: MAINNET_ONLY,
+      },
+      async (config) => {
+        expect(config.trackedContracts).toEqual([MAINNET_ONLY]);
+      },
+    );
+  });
+
+  it("falls back to the shared contract on mainnet", async () => {
+    await withConfig(
+      { ...MAINNET_ENV, TRACKED_CONTRACT: SHARED },
+      async (config) => {
+        expect(config.trackedContracts).toEqual([SHARED]);
+      },
+    );
+  });
+
+  it("prefers SEPOLIA_TRACKED_CONTRACT on sepolia", async () => {
+    await withConfig(
+      {
+        ...SEPOLIA_ENV,
+        TRACKED_CONTRACT: SHARED,
+        SEPOLIA_TRACKED_CONTRACT: SEPOLIA_ONLY,
+      },
+      async (config) => {
+        expect(config.trackedContracts).toEqual([SEPOLIA_ONLY]);
+      },
+    );
+  });
+
+  it("tracks nothing on mainnet when no contract is configured", async () => {
+    await withConfig({ ...MAINNET_ENV }, async (config) => {
+      expect(config.trackedContracts).toEqual([]);
+    });
   });
 });

@@ -212,6 +212,8 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 | `WITHDRAWAL_MAX_PER_WINDOW_WEI` | Max outflow per wallet per window | unset |
 | `WITHDRAWAL_WINDOW_SECONDS` | Velocity window | `86400` |
 | `TRACKED_CONTRACT` | Contract to report in `GET /assets` | `0xee1DC6BC…` |
+| `MAINNET_TRACKED_CONTRACT` | Mainnet override of the above | unset (falls back to `TRACKED_CONTRACT`) |
+| `SEPOLIA_TRACKED_CONTRACT` | Sepolia override of the above | unset (falls back to `TRACKED_CONTRACT`) |
 | `WALLET_MNEMONIC` | BIP-39 mnemonic for wallet derivation | required |
 | `WALLET_COUNT` | Number of wallets to manage (1–20) | `5` |
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
@@ -258,6 +260,11 @@ The contract to report on comes from `TRACKED_CONTRACT`:
 ```
 TRACKED_CONTRACT=0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea
 ```
+
+A contract address only means something on **one** chain — the same address is
+usually an empty account elsewhere. Set `MAINNET_TRACKED_CONTRACT` (or
+`SEPOLIA_TRACKED_CONTRACT`) when the two chains use different deployments; it
+overrides `TRACKED_CONTRACT` for that network.
 
 Comma-separated addresses are accepted if you want to watch more than one.
 Balances are read with ERC-20 calls, so if the tracked contract is not an
@@ -636,14 +643,10 @@ the address's key and the service verifies recovery before signing anything.
 
 ## Evidence and on-chain verification
 
-`evidence/` holds exported ERC-20 event logs, plus the tooling that checks
-them against a chain.
+No event export ships with this repo. What ships is the tooling to check one.
 
-**None of it is verified.** The export carries no chain id and was collected
-without any RPC or explorer access, so every row starts out unconfirmed. It is
-committed as *evidence*, not as established fact.
-
-Verify a file against a node for the chain the logs came from:
+Drop an ERC-20 event-log export into `evidence/` and verify it against a node
+for the chain the logs came from:
 
 ```bash
 npm run verify:events -- https://your-rpc-url --in evidence/<file>.json
@@ -651,6 +654,9 @@ npm run verify:events -- https://your-rpc-url --in evidence/<file>.json
 
 The input path is **required** — the verifier deliberately defaults to nothing,
 so it can never silently check the wrong dataset.
+
+Nothing here has been run against a chain. Any dataset you bring starts
+**UNVERIFIED** and stays that way until the command above passes.
 
 For each row the verifier fetches the receipt and checks:
 
@@ -681,6 +687,11 @@ matching event signatures do not prove token legitimacy, raw `uint256` values ar
 not human-readable without the token's decimals, and logs alone support no
 conclusion about intent. Verification establishes that these events are really on
 chain — nothing more.
+
+The test suite runs this machinery against
+`tests/fixtures/erc20-events.sample.json`, which is **synthetic** — invented
+rows that exist only to cover the code paths. No row in it corresponds to a real
+transaction, and it can never be verified against a chain.
 
 ## Funding test wallets
 

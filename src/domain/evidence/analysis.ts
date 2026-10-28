@@ -3,7 +3,6 @@
  * this counts, sums and flags. Whether the logs are real is the verifier's job.
  */
 import fs from "node:fs";
-import path from "node:path";
 import { getAddress } from "ethers";
 import {
   EventRow,
@@ -13,12 +12,13 @@ import {
   APPROVAL_TOPIC0,
 } from "./types.js";
 
-export const DEFAULT_EVIDENCE_PATH = path.resolve(
-  process.cwd(),
-  "evidence/erc20-transfer-events.json",
-);
-
-export function loadEvidence(filePath: string = DEFAULT_EVIDENCE_PATH): EvidenceFile {
+/**
+ * Reads an event-log export.
+ *
+ * The path is required on purpose. No dataset ships with this repo, and a
+ * default is how a verifier ends up quietly checking the wrong contract.
+ */
+export function loadEvidence(filePath: string): EvidenceFile {
   const raw = fs.readFileSync(filePath, "utf8");
   const parsed = JSON.parse(raw) as EvidenceFile;
 
