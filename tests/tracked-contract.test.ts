@@ -37,6 +37,8 @@ const BASE_ENV: Record<string, string | undefined> = {
 
 interface MockOptions {
   nativeWei?: bigint;
+  /** ETH balance per lowercase address — wallet funds and contract reserves. */
+  ethBalances?: Record<string, bigint>;
   balances?: Record<string, bigint>;
   decimals?: Record<string, number>;
   symbols?: Record<string, string>;
@@ -58,7 +60,14 @@ const enc = (name: string, values: unknown[]) =>
 
 function mockProvider(options: MockOptions = {}) {
   return {
-    getBalance: vi.fn().mockResolvedValue(options.nativeWei ?? parseEther("2")),
+    getBalance: vi.fn().mockImplementation(
+      (address: string) =>
+        Promise.resolve(
+          options.ethBalances?.[address.toLowerCase()] ??
+            options.nativeWei ??
+            parseEther("2"),
+        ) as Promise<bigint>,
+    ),
     getTransactionCount: vi.fn().mockResolvedValue(0),
     getFeeData: vi.fn().mockResolvedValue({
       maxFeePerGas: 2_000_000_000n,
@@ -313,6 +322,39 @@ describe("destination-scoped transfer gate", () => {
       { totalSupply: { [CONTRACT.toLowerCase()]: parseUnits("1000", 18) } },
     );
   });
+
+  it("reports the ETH backing the supply, and whether it covers it", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ assets }) => {
+        const [info] = await assets.getTrackedContractInfo();
+
+        // totalSupply() is defined as address(this).balance, so for a
+        // WETH-style token this is exactly the redemption backing.
+        expect(info!.totalSupplyFormatted).toBe("42.591");
+        expect(info!.ethReserveFormatted).toBe("42.591");
+        expect(info!.fullyBacked).toBe(true);
+      },
+      {
+        totalSupply: { [CONTRACT.toLowerCase()]: parseUnits("42.591", 18) },
+        ethBalances: { [CONTRACT.toLowerCase()]: parseUnits("42.591", 18) },
+      },
+    );
+  });
+
+  it("flags a supply that is not fully backed", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ assets }) => {
+        const [info] = await assets.getTrackedContractInfo();
+        expect(info!.fullyBacked).toBe(false);
+      },
+      {
+        totalSupply: { [CONTRACT.toLowerCase()]: parseUnits("100", 18) },
+        ethBalances: { [CONTRACT.toLowerCase()]: parseUnits("42.591", 18) },
+      },
+    );
+  });
 });
 
 describe("unwrapping a restricted balance", () => {
@@ -397,6 +439,44 @@ describe("unwrapping a restricted balance", () => {
         ).rejects.toThrow(/Insufficient wrapped balance/);
       },
       { balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) } },
+    );
+  });
+
+  it("refuses to unwrap more ETH than the contract actually holds", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ unwrap }) => {
+        // The wallet holds 5 ABT, but the contract only holds 1 ETH of backing.
+        await expect(
+          unwrap.buildUnwrapTransaction({
+            fromWalletIndex: 0,
+            amountWei: parseUnits("2", 18).toString(),
+            broadcast: false,
+          }),
+        ).rejects.toThrow(/not fully backed/);
+      },
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        ethBalances: { [CONTRACT.toLowerCase()]: parseUnits("1", 18) },
+      },
+    );
+  });
+
+  it("unwraps up to the ETH the contract holds", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ unwrap }) => {
+        const built = await unwrap.buildUnwrapTransaction({
+          fromWalletIndex: 0,
+          amountWei: parseUnits("2", 18).toString(),
+          broadcast: false,
+        });
+        expect(built.amountWei).toBe(parseUnits("2", 18).toString());
+      },
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        ethBalances: { [CONTRACT.toLowerCase()]: parseUnits("42.591", 18) },
+      },
     );
   });
 

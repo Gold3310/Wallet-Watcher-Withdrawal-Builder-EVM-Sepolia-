@@ -82,6 +82,18 @@ export interface ContractInfo {
   restrictedDestination: string | null;
   /** Plain statement of the gate, from the verified source. */
   restriction: string;
+  /**
+   * ETH held by the contract. For a WETH-style token this IS the redemption
+   * backing: `totalSupply()` returns `address(this).balance`, and `withdraw()`
+   * pays out of that ETH.
+   */
+  ethReserveRaw: string | null;
+  ethReserveFormatted: string | null;
+  /**
+   * Whether the contract holds enough ETH to redeem the entire supply.
+   * Null when either side could not be read.
+   */
+  fullyBacked: boolean | null;
   /** Function to call to turn a balance back into ETH. */
   unwrapFunction: string | null;
   error: string | null;
@@ -286,14 +298,16 @@ export async function readContractInfo(
   provider: CallProvider,
   token: string,
 ): Promise<ContractInfo> {
-  const [name, symbol, decimals, totalSupply, owner, hubPool] = await Promise.all([
-    readString(provider, token, "name"),
-    readString(provider, token, "symbol"),
-    readUint(provider, token, "decimals"),
-    readUint(provider, token, "totalSupply"),
-    readAddress(provider, token, "owner"),
-    readAddress(provider, token, "hubPool"),
-  ]);
+  const [name, symbol, decimals, totalSupply, owner, hubPool, ethReserve] =
+    await Promise.all([
+      readString(provider, token, "name"),
+      readString(provider, token, "symbol"),
+      readUint(provider, token, "decimals"),
+      readUint(provider, token, "totalSupply"),
+      readAddress(provider, token, "owner"),
+      readAddress(provider, token, "hubPool"),
+      callOrNull(() => provider.getBalance(token)),
+    ]);
 
   return {
     address: token,
@@ -309,6 +323,10 @@ export async function readContractInfo(
     hubPool,
     restrictedDestination: hubPool,
     restriction: TRANSFER_RESTRICTION,
+    ethReserveRaw: ethReserve === null ? null : ethReserve.toString(),
+    ethReserveFormatted: ethReserve === null ? null : formatEther(ethReserve),
+    fullyBacked:
+      ethReserve === null || totalSupply === null ? null : ethReserve >= totalSupply,
     unwrapFunction: UNWRAP_FUNCTION,
     error: null,
   };

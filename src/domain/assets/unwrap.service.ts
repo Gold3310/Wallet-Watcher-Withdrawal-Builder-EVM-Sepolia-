@@ -126,6 +126,19 @@ export async function buildUnwrapTransaction(
     );
   }
 
+  // withdraw() pays out of the ETH the contract itself holds, and
+  // totalSupply() is defined as that balance. If the contract is short, the
+  // transaction would revert on chain — so refuse here instead of burning gas.
+  const contractEth = await provider.getBalance(contract);
+
+  if (contractEth < amount) {
+    throw new Error(
+      `Contract holds ${contractEth.toString()} wei of ETH, less than the ` +
+        `${amount.toString()} being unwrapped — this redemption is not fully ` +
+        `backed. Unwrap a smaller amount.`,
+    );
+  }
+
   const data = trackedContractInterface.encodeFunctionData(UNWRAP_FUNCTION, [
     amount,
   ]);

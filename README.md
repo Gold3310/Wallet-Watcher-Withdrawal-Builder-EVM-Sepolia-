@@ -292,6 +292,9 @@ balances, which the poller owns.
       "hubPool": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       "restrictedDestination": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       "restriction": "Transfers to any address are unrestricted, except to the hubPool…",
+      "ethReserveRaw": "42591000000000000000",
+      "ethReserveFormatted": "42.591",
+      "fullyBacked": true,
       "unwrapFunction": "withdraw",
       "error": null
     }
@@ -392,6 +395,31 @@ One implementation detail worth knowing: WETH9's `withdraw` pays out with
 `transfer()`, which forwards only the 2300-gas stipend. That is fine for an EOA
 wallet, and will revert for a contract recipient without a cheap `receive()`.
 
+### "Owner" does not mean "can withdraw"
+
+Three different things get called the owner here, and only one of them can move
+value:
+
+| Role | What it can do | What it cannot do |
+|------|----------------|-------------------|
+| Contract `owner()` (Ownable) | `setProposer`, `transferOwnership`, `renounceOwnership` | touch ETH or ABT — there is no owner-withdraw function |
+| `OWNER_ADDRESS` in this service | authenticate to this API and request withdrawals | anything on chain by itself; it is a bearer credential, not a key |
+| A wallet that **holds ABT** | `transfer` it, or `withdraw()` it into ETH | — |
+
+The ETH sitting in the BondToken contract is **not** claimable by an owner. It
+is the redemption backing for the ABT in circulation — `totalSupply()` is
+defined as `address(this).balance`. The only route to any of it is to hold ABT
+and redeem it. `GET /assets` reports both sides: `totalSupplyRaw`, and
+`ethReserveRaw` / `fullyBacked` to confirm the backing is really there.
+
+So the first question is never "am I the owner?" — it is
+`balanceOf(<my address)`, which `GET /assets` answers for every derived wallet.
+
+One more constraint, stated plainly because it bites late: **this service signs
+only for the wallets derived from `WALLET_MNEMONIC`.** An address that is not
+one of them can be the API owner, can be allowlisted as a destination, and can
+be reported on — but the service cannot sign a transaction for it.
+
 ### `POST /assets/unwrap`
 
 One of two ways to turn ABT into ETH — the other being a plain `transfer` to
@@ -407,6 +435,9 @@ curl -s localhost:3000/assets/unwrap \
 
 - Reads the wrapped balance **before** building, so an over-amount fails here
   rather than reverting on chain and burning gas.
+- Checks the contract's ETH reserve too. `withdraw()` pays out of ETH the
+  contract holds, so if it is short the transaction would revert — the request
+  is refused with "not fully backed" instead.
 - Refuses to guess: exactly one contract must be tracked, and the amount is
   explicit. There is no "unwrap everything".
 - `broadcast` defaults to `false`. Nothing is sent unless you ask.
