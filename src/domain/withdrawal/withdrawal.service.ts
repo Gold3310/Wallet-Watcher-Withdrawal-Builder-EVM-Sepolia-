@@ -47,6 +47,21 @@ export interface WithdrawalResult {
 
 const SIMPLE_TRANSFER_GAS_LIMIT = 21_000n;
 
+/**
+ * Value ceiling applied on networks where funds are real. Testnets are
+ * uncapped. Checked for every withdrawal, whether it comes through
+ * `POST /withdrawals` directly or through a permission redemption.
+ */
+export function assertWithinNetworkValueLimit(value: bigint): void {
+  const limit = config.maxTxValueWei;
+
+  if (limit !== null && value > limit) {
+    throw new Error(
+      `Amount ${value} wei exceeds the ${config.network} per-transaction limit of ${limit} wei`,
+    );
+  }
+}
+
 export function parseAmountWei(amountWei: string): bigint {
   let value: bigint;
 
@@ -84,6 +99,7 @@ export async function buildWithdrawalTransaction(
 
   const toAddress = normalizeDestinationAddress(request.toAddress);
   const value = parseAmountWei(request.amountWei);
+  assertWithinNetworkValueLimit(value);
   const signer = getSignerForIndex(request.fromWalletIndex);
   const provider = getProvider();
 

@@ -9,7 +9,8 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Balance-change ledger (inflows from tracking, outflows only on broadcast)
 - REST API for wallet balances and withdrawals
 - ERC-7715 session permissions (grant, inspect, revoke, redeem) with expiry and spending policies
-- Unit tests for wallet derivation, transaction building and permissions
+- Runs on Sepolia or mainnet, with per-chain guardrails when funds are real
+- Unit tests for wallet derivation, transaction building, permissions and network config
 
 ## Wallet derivation (BIP-39 / BIP-44)
 
@@ -43,11 +44,51 @@ This satisfies the assignment's determinism rules:
 
 Implementation: `HDNodeWallet.fromMnemonic()` in `src/domain/wallet/wallet.service.ts`.
 
+## Networks
+
+The same code runs against Sepolia or Ethereum mainnet. One mnemonic produces
+**the same addresses on both chains**, so balances and the ledger are only
+meaningful per chain — the database is pinned to the chain it was created on and
+the service refuses to open it on another (`DATABASE_PATH` per chain).
+
+| `CHAIN` | Chain ID | RPC variable | Guardrails |
+|---------|----------|--------------|------------|
+| `sepolia` (default) | 11155111 | `SEPOLIA_RPC_URL` | none — value uncapped, unbounded grants allowed |
+| `mainnet` | 1 | `MAINNET_RPC_URL` | opt-in required, per-transaction cap, 24h grant cap, `spending-cap` mandatory |
+
+### Mainnet guardrails
+
+Mainnet moves real funds, so it is deliberately harder to run than a testnet:
+
+| Rail | Default | Effect |
+|------|---------|--------|
+| `MAINNET_ENABLED` | unset | The service **refuses to boot** on mainnet unless this is exactly `true` |
+| `MAINNET_MAX_TX_VALUE_WEI` | `100000000000000000` (0.1 ETH) | Ceiling on any single transaction, enforced for both `POST /withdrawals` and permission redemptions |
+| `MAINNET_MAX_GRANT_EXPIRY_SECONDS` | `86400` (24h) | Longest permission grant accepted on mainnet |
+| `MAINNET_ALLOW_UNBOUNDED_GRANTS` | `false` | Grants without a `spending-cap` policy are rejected |
+| `DATABASE_PATH` | `./data/mainnet-wallets.db` | Separate store from the testnet database |
+
+On boot the service prints the guardrails in effect:
+
+```
+Network: mainnet (chainId 1) — MAINNET
+*** MAINNET: real funds are at risk. Guardrails in effect:
+***   per-transaction limit:     0.1 ETH
+***   max permission grant:      86400s
+***   unbounded grants allowed:  false
+***   database:                  ./data/mainnet-wallets.db (bound to mainnet)
+Initialized 5 wallet(s) on mainnet
+```
+
+None of this is a substitute for an approval process, a hardware signer, or a
+withdrawal allowlist — see [Security notes](#security-notes).
+
 ## Requirements
 
 - Node.js 20+
-- A Sepolia RPC URL (Alchemy, Infura, or public endpoint)
-- A testnet-only mnemonic (never use mainnet keys)
+- An RPC URL for the chain you are running (Alchemy, Infura, or a public endpoint)
+- A mnemonic for wallet derivation — use a testnet-only mnemonic unless you
+  intend to run against mainnet, and treat it as a production secret if you do
 
 ## Setup
 
@@ -154,7 +195,13 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SEPOLIA_RPC_URL` | Sepolia JSON-RPC endpoint | required |
+| `CHAIN` | `sepolia` or `mainnet` | `sepolia` |
+| `SEPOLIA_RPC_URL` | Sepolia JSON-RPC endpoint | required when `CHAIN=sepolia` |
+| `MAINNET_RPC_URL` | Mainnet JSON-RPC endpoint | required when `CHAIN=mainnet` |
+| `MAINNET_ENABLED` | Opt in to running on mainnet | unset (refuses to boot) |
+| `MAINNET_MAX_TX_VALUE_WEI` | Mainnet per-transaction ceiling, in wei | `100000000000000000` (0.1 ETH) |
+| `MAINNET_MAX_GRANT_EXPIRY_SECONDS` | Longest mainnet permission grant | `86400` |
+| `MAINNET_ALLOW_UNBOUNDED_GRANTS` | Allow mainnet grants without a `spending-cap` | `false` |
 | `WALLET_MNEMONIC` | BIP-39 mnemonic for wallet derivation | required |
 | `WALLET_COUNT` | Number of wallets to manage (1–20) | `5` |
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
@@ -501,10 +548,19 @@ src/
 | Only `native-token-transfer` is redeemable | No ERC-20 validator or allowance plumbing on the EOA custody path |
 | Broadcast redemptions consume the cap | Build-only redemptions stay side-effect free |
 | No deposit aggregation | Out of assignment scope; documented behavior instead |
+| Mainnet guardrails instead of a policy engine | Bounds blast radius without pretending to be an approval workflow |
+| Database pinned to one chain | Addresses repeat across chains; mixing ledgers would silently corrupt balances |
 
 ## Security notes
 
-- Testnet only — do not use real/mainnet mnemonics
+- Default to Sepolia. Mainnet is opt-in per boot, not per request, and only
+  with `MAINNET_ENABLED=true`
+- The guardrails here are a speed limit, not a policy engine: they bound how
+  much a single transaction or session can move, but anyone who can reach the
+  API can still spend up to that bound. For real custody add authentication,
+  an approval step, an address allowlist and a hardware-backed signer
+- Do not reuse a testnet mnemonic on mainnet, and treat a mainnet mnemonic as a
+  production secret — every derived key is reachable from it
 - Never commit `.env` or secrets
 - Private keys are derived in memory from `WALLET_MNEMONIC` when signing
 - Permission sessions are enforced by this service, not by an on-chain

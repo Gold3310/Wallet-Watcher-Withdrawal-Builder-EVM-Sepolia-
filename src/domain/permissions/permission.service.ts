@@ -201,6 +201,13 @@ export function grantPermissions(input: GrantInput): GrantResult {
   const permissions = validatePermissions(input.permissions);
   const durationSeconds = validateExpiry(input.expiry);
 
+  if (!config.allowUnboundedGrants && spendingCapOf(permissions) === null) {
+    throw new Error(
+      `Grants on ${config.network} must declare a '${ENFORCED_POLICY_TYPES.spendingCap}' policy, ` +
+        "or set MAINNET_ALLOW_UNBOUNDED_GRANTS=true to accept unbounded sessions",
+    );
+  }
+
   const accountWallet = deriveWalletAtIndex(
     config.walletMnemonic,
     input.fromWalletIndex,

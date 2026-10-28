@@ -58,12 +58,50 @@ export function getDatabase(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initializeSchema(db);
+    bindNetwork(db, config.network, config.chainId);
   }
   return db;
 }
 
+/**
+ * Addresses are identical across chains (same mnemonic), so balances and the
+ * ledger are only meaningful per network. Pin the network to the database and
+ * refuse to open it on a different chain rather than silently mixing ledgers.
+ */
+function bindNetwork(
+  database: Database.Database,
+  network: string,
+  chainId: number,
+): void {
+  const row = database
+    .prepare("SELECT value FROM meta WHERE key = 'network'")
+    .get() as { value: string } | undefined;
+
+  if (!row) {
+    database
+      .prepare("INSERT INTO meta (key, value) VALUES ('network', ?)")
+      .run(network);
+    database
+      .prepare("INSERT INTO meta (key, value) VALUES ('chain_id', ?)")
+      .run(String(chainId));
+    return;
+  }
+
+  if (row.value !== network) {
+    throw new Error(
+      `Database at ${config.databasePath} belongs to network '${row.value}', ` +
+        `refusing to run on '${network}'. Set DATABASE_PATH per chain.`,
+    );
+  }
+}
+
 function initializeSchema(database: Database.Database): void {
   database.exec(`
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS wallets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       index_num INTEGER NOT NULL UNIQUE,

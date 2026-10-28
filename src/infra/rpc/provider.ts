@@ -5,7 +5,7 @@ let provider: JsonRpcProvider | null = null;
 
 export function getProvider(): JsonRpcProvider {
   if (!provider) {
-    provider = new JsonRpcProvider(config.sepoliaRpcUrl, config.chainId);
+    provider = new JsonRpcProvider(config.rpcUrl, config.chainId);
   }
   return provider;
 }
