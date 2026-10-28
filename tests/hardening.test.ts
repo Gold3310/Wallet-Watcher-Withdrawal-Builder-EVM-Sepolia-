@@ -5,8 +5,8 @@ import { withConfig } from "./helpers/withConfig.js";
 
 const DESTINATION = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const OTHER_DESTINATION = "0x2EF4c86Bdd42884339643D2beCB32988D90A46F4";
-/** Withdrawable owner: the destination withdrawals are permitted to target. */
-const OWNER_ADDRESS = "0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE";
+/** Withdrawal owner: the address authorised to request withdrawals. */
+const OWNER = "0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE";
 const TX_HASH = "0x" + "33".repeat(32);
 const TOKEN = "secret-123";
 
@@ -107,7 +107,7 @@ const withdrawalBody = (overrides: Record<string, unknown> = {}) => ({
 
 describe("API authentication", () => {
   it("rejects unauthenticated requests when tokens are configured", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl }) => {
       const anonymous = await fetch(`${baseUrl}/wallets`);
       expect(anonymous.status).toBe(401);
       expect((await anonymous.json()).error).toBe("Missing bearer token");
@@ -126,7 +126,7 @@ describe("API authentication", () => {
   });
 
   it("leaves /health open for probes", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl }) => {
       const health = await fetch(`${baseUrl}/health`);
       expect(health.status).toBe(200);
     });
@@ -140,7 +140,7 @@ describe("API authentication", () => {
   });
 
   it("records which caller moved funds", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl }) => {
       const response = await post(
         baseUrl,
         "/withdrawals",
@@ -149,7 +149,7 @@ describe("API authentication", () => {
       );
 
       expect(response.status).toBe(201);
-      expect(response.body.requestedBy).toBe("ops");
+      expect(response.body.requestedBy).toBe(OWNER);
 
       const database = await import("../src/infra/db/database.js");
       const wallet = database.getWalletByIndex(0)!;
@@ -158,9 +158,26 @@ describe("API authentication", () => {
         .filter((entry) => entry.type === "outflow");
 
       expect(outflows).toHaveLength(1);
-      expect(outflows[0].actor).toBe("ops");
+      expect(outflows[0].actor).toBe(OWNER);
       expect(outflows[0].tx_hash).toBe(TX_HASH);
     });
+  });
+});
+
+describe("owner-bound tokens", () => {
+  it("rejects a token id that is not an address", async () => {
+    await expect(
+      withConfig({ ...BASE_ENV, API_TOKENS: `ops:${TOKEN}` }, () => null),
+    ).rejects.toThrow("must be a valid Ethereum address");
+  });
+
+  it("normalises owner addresses to checksum form", async () => {
+    await withConfig(
+      { ...BASE_ENV, API_TOKENS: `${OWNER.toLowerCase()}:${TOKEN}` },
+      (config) => {
+        expect([...config.apiTokens.keys()]).toEqual([OWNER]);
+      },
+    );
   });
 });
 
@@ -309,7 +326,7 @@ describe("concurrency", () => {
 
 describe("idempotency", () => {
   it("replays the stored response instead of sending twice", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl, broadcast }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl, broadcast }) => {
       const body = JSON.stringify(withdrawalBody({ broadcast: true }));
       const headers = authHeaders({
         "Content-Type": "application/json",
@@ -339,7 +356,7 @@ describe("idempotency", () => {
   });
 
   it("requires a key when the request broadcasts", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl, broadcast }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl, broadcast }) => {
       const response = await post(
         baseUrl,
         "/withdrawals",
@@ -354,7 +371,7 @@ describe("idempotency", () => {
   });
 
   it("rejects a key reused with a different body", async () => {
-    await withServer({ API_TOKENS: `ops:${TOKEN}` }, async ({ baseUrl }) => {
+    await withServer({ API_TOKENS: `${OWNER}:${TOKEN}` }, async ({ baseUrl }) => {
       const headers = authHeaders({ "idempotency-key": "withdrawal-1" });
 
       const first = await post(
@@ -382,39 +399,6 @@ describe("idempotency", () => {
 });
 
 describe("destination allowlist", () => {
-  it("accepts the withdrawable owner address", async () => {
-    await withServer(
-      { WITHDRAWAL_ALLOWLIST: OWNER_ADDRESS },
-      async ({ baseUrl }) => {
-        const response = await post(
-          baseUrl,
-          "/withdrawals",
-          withdrawalBody({ toAddress: OWNER_ADDRESS }),
-        );
-
-        expect(response.status).toBe(200);
-        expect(response.body.transaction.to).toBe(OWNER_ADDRESS);
-      },
-    );
-  });
-
-  it("blocks every other destination while the owner is allowlisted", async () => {
-    await withServer(
-      { WITHDRAWAL_ALLOWLIST: OWNER_ADDRESS },
-      async ({ baseUrl, broadcast }) => {
-        const blocked = await post(
-          baseUrl,
-          "/withdrawals",
-          withdrawalBody({ toAddress: OTHER_DESTINATION }),
-        );
-
-        expect(blocked.status).toBe(400);
-        expect(blocked.body.error).toMatch(/not in the withdrawal allowlist/);
-        expect(broadcast).not.toHaveBeenCalled();
-      },
-    );
-  });
-
   it("blocks destinations outside the allowlist", async () => {
     await withServer(
       { WITHDRAWAL_ALLOWLIST: DESTINATION },

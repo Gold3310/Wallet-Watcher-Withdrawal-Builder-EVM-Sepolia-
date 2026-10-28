@@ -67,6 +67,7 @@ Mainnet moves real funds, so it is deliberately harder to run than a testnet:
 | `MAINNET_MAX_GRANT_EXPIRY_SECONDS` | `86400` (24h) | Longest permission grant accepted on mainnet |
 | `MAINNET_ALLOW_UNBOUNDED_GRANTS` | `false` | Grants without a `spending-cap` policy are rejected |
 | `DATABASE_PATH` | `./data/mainnet-wallets.db` | Separate store from the testnet database |
+| `API_TOKENS` | unset | Refuses to boot on mainnet with an unauthenticated API |
 
 On boot the service prints the guardrails in effect:
 
@@ -202,6 +203,11 @@ Screenshot: terminal showing all tests passing (wallet generation + transaction 
 | `MAINNET_MAX_TX_VALUE_WEI` | Mainnet per-transaction ceiling, in wei | `100000000000000000` (0.1 ETH) |
 | `MAINNET_MAX_GRANT_EXPIRY_SECONDS` | Longest mainnet permission grant | `86400` |
 | `MAINNET_ALLOW_UNBOUNDED_GRANTS` | Allow mainnet grants without a `spending-cap` | `false` |
+| `API_TOKENS` | Withdrawal owners as `<ownerAddress>:<secret>` pairs | unset (API unauthenticated) |
+| `WITHDRAWAL_ALLOWLIST` | Recipient addresses withdrawals may target | empty (any destination) |
+| `WITHDRAWAL_MAX_VALUE_WEI` | Per-transaction ceiling on any chain | unset |
+| `WITHDRAWAL_MAX_PER_WINDOW_WEI` | Max outflow per wallet per window | unset |
+| `WITHDRAWAL_WINDOW_SECONDS` | Velocity window | `86400` |
 | `WALLET_MNEMONIC` | BIP-39 mnemonic for wallet derivation | required |
 | `WALLET_COUNT` | Number of wallets to manage (1–20) | `5` |
 | `POLL_INTERVAL_MS` | Balance polling interval | `120000` (2 min) |
@@ -493,29 +499,52 @@ curl -s http://localhost:3000/permissions/1
 curl -s -X POST http://localhost:3000/permissions/1/revoke
 ```
 
-## Withdrawable owner
+## Withdrawal owners
 
-Withdrawals can be restricted to a fixed set of destinations via
-`WITHDRAWAL_ALLOWLIST`. The address configured in `.env.example` is the
-**withdrawable owner** — the destination this service is allowed to send funds
-to:
+A **withdrawal owner** is an address authorised to *request* withdrawals. Owners
+are configured in `API_TOKENS` as `<ownerAddress>:<secret>` pairs — the address
+is the identity the request acts as, and the secret is its bearer credential:
+
+```
+API_TOKENS=0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE:<secret>
+```
+
+The owner below is the one registered in `.env.example`:
 
 ```
 0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE
 ```
 
-With the allowlist set, `POST /withdrawals` and `POST /permissions/:id/redeem`
-to any **other** address are rejected with `400` before anything is signed.
-Leave `WITHDRAWAL_ALLOWLIST` empty to allow any destination (the default when
-the variable is unset).
+How it behaves:
 
-Copy it into your `.env` to activate it:
+- Every route except `GET /health` requires `Authorization: Bearer <secret>`
+  whenever any owner is configured.
+- The **owner address** — not a label — is recorded on each outflow ledger entry
+  and returned as `requestedBy`, so every movement is attributable to an
+  on-chain identity.
+- Token ids must be valid addresses; they are normalised to EIP-55 checksum
+  form, so lowercase input works.
+- Mainnet refuses to boot unless at least one owner is configured.
+- Separate owners can be given separate secrets, which makes a single
+  credential revocable without disturbing the others.
 
-```bash
-cp .env.example .env   # then edit WALLET_MNEMONIC and the RPC url
+Owner addresses are **requesters**, not recipients. To restrict where funds may
+be *sent*, use `WITHDRAWAL_ALLOWLIST` — a different list, empty by default:
+
+```
+WITHDRAWAL_ALLOWLIST=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 ```
 
-Addresses are normalised to EIP-55 checksum form, so lowercase input matches.
+Copy the configuration into your `.env` to activate it:
+
+```bash
+cp .env.example .env   # then set WALLET_MNEMONIC, the RPC url, and a real secret
+```
+
+Note that bearer secrets are only as strong as the secret itself: anyone who
+holds one can act as that owner. If you want cryptographic proof of control
+instead, the next step is request signing — the owner signs each withdrawal with
+the address's key and the service verifies recovery before signing anything.
 
 ## Funding test wallets
 

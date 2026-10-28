@@ -88,7 +88,13 @@ function parseWeiEnv(name: string, fallback: bigint): bigint {
   return value;
 }
 
-/** `API_TOKENS="ops:<secret>,ci:<secret>"` — caller id to its bearer secret. */
+/**
+ * `API_TOKENS="<ownerAddress>:<secret>,…"`.
+ *
+ * The id is the owner address the token acts for, so every withdrawal is
+ * attributable to an on-chain identity rather than an arbitrary label. Ids are
+ * validated as addresses and stored in EIP-55 checksum form.
+ */
 function parseApiTokens(raw: string | undefined): Map<string, string> {
   const tokens = new Map<string, string>();
   if (!raw || !raw.trim()) {
@@ -104,16 +110,25 @@ function parseApiTokens(raw: string | undefined): Map<string, string> {
     const separator = trimmed.indexOf(":");
     if (separator <= 0 || separator === trimmed.length - 1) {
       throw new Error(
-        `API_TOKENS entries must be "<id>:<secret>" (got: ${trimmed})`,
+        `API_TOKENS entries must be "<ownerAddress>:<secret>" (got: ${trimmed})`,
       );
     }
 
     const id = trimmed.slice(0, separator).trim();
-    if (tokens.has(id)) {
-      throw new Error(`Duplicate API token id: ${id}`);
+
+    if (!isAddress(id)) {
+      throw new Error(
+        `API_TOKENS id must be a valid Ethereum address, got: ${id}`,
+      );
     }
 
-    tokens.set(id, trimmed.slice(separator + 1).trim());
+    const owner = getAddress(id);
+
+    if (tokens.has(owner)) {
+      throw new Error(`Duplicate API token owner: ${owner}`);
+    }
+
+    tokens.set(owner, trimmed.slice(separator + 1).trim());
   }
 
   return tokens;
@@ -214,7 +229,7 @@ export const config = {
 if (!config.isTestnet && config.apiTokens.size === 0) {
   throw new Error(
     "Refusing to start on mainnet without API_TOKENS: set at least one " +
-      '"<id>:<secret>" pair so withdrawals are attributable.',
+      '"<ownerAddress>:<secret>" pair so withdrawals are attributable.',
   );
 }
 
