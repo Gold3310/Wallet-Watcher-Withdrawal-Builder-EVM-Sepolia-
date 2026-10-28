@@ -29,7 +29,7 @@ const MAINNET_ENV = {
   MAINNET_ENABLED: "true",
   MAINNET_RPC_URL: "https://mainnet.example",
   // Required: mainnet refuses to boot with an unauthenticated API.
-  API_TOKENS: "0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE:test-token",
+  API_TOKENS: "0x1111111111111111111111111111111111111111:test-token",
 };
 
 function mockProvider() {

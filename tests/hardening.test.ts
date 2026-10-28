@@ -6,7 +6,7 @@ import { withConfig } from "./helpers/withConfig.js";
 const DESTINATION = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const OTHER_DESTINATION = "0x2EF4c86Bdd42884339643D2beCB32988D90A46F4";
 /** Withdrawal owner: the address authorised to request withdrawals. */
-const OWNER = "0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE";
+const OWNER = "0x1111111111111111111111111111111111111111";
 const TX_HASH = "0x" + "33".repeat(32);
 const TOKEN = "secret-123";
 

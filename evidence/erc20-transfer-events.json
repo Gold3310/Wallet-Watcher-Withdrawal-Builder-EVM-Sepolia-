@@ -1,0 +1,342 @@
+{
+  "source": "User-supplied CSV export of ERC-20 event logs (local analysis only).",
+  "network": "UNCONFIRMED — the source data carries no chain id",
+  "tokenContract": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+  "verification": "NONE — no RPC or explorer was reachable when this was collected",
+  "limitations": [
+    "Event signatures are not proof of token legitimacy.",
+    "Raw uint256 values are not token-adjusted without decimals.",
+    "No maliciousness conclusion from logs alone.",
+    "Log-derived flows are a partial view: they cover only the blocks queried."
+  ],
+  "notes": [
+    "Row 19 was truncated in the source paste: its third topic (recipient) is missing. Its value is recovered from the data field, and the row is flagged incomplete so the verifier skips it until it is re-supplied."
+  ],
+  "rows": [
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 72,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000000a4de3d0e9ba40000",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000008f10b468b06c6fd214b65f87778827f7d113f996",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x8f10b468b06c6fd214b65f87778827f7d113f996",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "11880000000000000000"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 70,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000000a4de3d0e9ba40000",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3",
+        "0x0000000000000000000000008f10b468b06c6fd214b65f87778827f7d113f996"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "to": "0x8f10b468b06c6fd214b65f87778827f7d113f996",
+      "value": "11880000000000000000"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 69,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "topics": [
+        "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3",
+        "0x0000000000000000000000006131b5fae19ea4f9d964eac0408e4408b66337b5"
+      ],
+      "eventType": "Approval",
+      "owner": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "spender": "0x6131b5fae19ea4f9d964eac0408e4408b66337b5",
+      "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 66,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x0000000000000000000000000000000000000000000000000195026560650000",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3",
+        "0x0000000000000000000000005aafc1f252d544f744d17a4e734afd6efc47ede4"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "to": "0x5aafc1f252d544f744d17a4e734afd6efc47ede4",
+      "value": "114000000000000000"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 65,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000000001550f7dca70000",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3",
+        "0x000000000000000000000000c06ebbefd94032b85424d51906e2a335efae264b"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "to": "0xc06ebbefd94032b85424d51906e2a335efae264b",
+      "value": "6000000000000000"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 64,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000000a688906bd8b00000",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000e45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3"
+      ],
+      "eventType": "Transfer",
+      "from": "0xe45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+      "to": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "value": "12000000000000000000"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 63,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "topics": [
+        "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+        "0x000000000000000000000000e45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3"
+      ],
+      "eventType": "Approval",
+      "owner": "0xe45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+      "spender": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "value": "0"
+    },
+    {
+      "txHash": "0x1273fa6162b1c5d7418f314d55bf8e0d0b30f7e3cf49900f9c37376de74a62ed",
+      "logIndex": 62,
+      "blockNumber": 86369971,
+      "blockHash": "0x0a3c154e48c9cb5d0e69711e133c6ecae84ac0b2a9b83821636706c6a625ce69",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000000a688906bd8b00000",
+      "topics": [
+        "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+        "0x000000000000000000000000e45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+        "0x000000000000000000000000b477751b76cf82d00a686a1232f5fcd772414af3"
+      ],
+      "eventType": "Approval",
+      "owner": "0xe45fc3e1d72069605bb02015c1cf9116d8f7f40a",
+      "spender": "0xb477751b76cf82d00a686a1232f5fcd772414af3",
+      "value": "12000000000000000000"
+    },
+    {
+      "txHash": "0x883db4967749a81ad7845ebc1a0df937f3c5107cd2dc78db13660953b7ece9b6",
+      "logIndex": 1,
+      "blockNumber": 85983390,
+      "blockHash": "0x9f4a9b71c4fbb0fd95a8b64bae363a7a3a7cf1aa5b248cc20aa8db449a0c2a12",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x00000000000000000000000000000000000000000000015e6a4fc717b4a1e399",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000001bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x1bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "6464020986194152252313"
+    },
+    {
+      "txHash": "0x31bf9427b8faa84230b53a0461531f5fde990edeb6341458bc657c2bd6cfa644",
+      "logIndex": 5,
+      "blockNumber": 85983384,
+      "blockHash": "0x02a1dd7af9d3ca3efa0ac38b3b0c6bc6265daa917d86105c8922b1202ebeff17",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x00000000000000000000000000000000000000000000015e972fedfedf7f0231",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        "0x000000000000000000000000fea028f37459cf460e969086606c4be8306319a5"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": "0xfea028f37459cf460e969086606c4be8306319a5",
+      "value": "6467254613500902703665"
+    },
+    {
+      "txHash": "0x0dd01d8748ed1f087cebc8121cbf248b3f264af706525e725659c3408e8f49e6",
+      "logIndex": 14,
+      "blockNumber": 85980474,
+      "blockHash": "0x6dccf916cb288ca42b152f373c42828b58f8c3c00b46afd23402c60ea3b72325",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012e0cda4632f249784",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        "0x000000000000000000000000799a7dfd4a644dce9228cf54c3f002ef9d3fe05c"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": "0x799a7dfd4a644dce9228cf54c3f002ef9d3fe05c",
+      "value": "348240177507393116036"
+    },
+    {
+      "txHash": "0x16ce43210bb238f0eb966aa0f666e29cc66e2135f9296eac92f887363faabd54",
+      "logIndex": 1,
+      "blockNumber": 85979252,
+      "blockHash": "0x6a8d569852134ac6edccbe80258859e26ba1778f06180788689497555a786f45",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x00000000000000000000000000000000000000000000001631ea22fe6ea8de18",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000001bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x1bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "409425095350192496152"
+    },
+    {
+      "txHash": "0x187d687fd0c669a7f9ad312448e9a0e1a0af697179b6cfa26446f26413fba87f",
+      "logIndex": 5,
+      "blockNumber": 85979238,
+      "blockHash": "0x97ead7691d8bf92c70a2d6a12a0979e123596da5c491fa07795d9117b6ce5e82",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x00000000000000000000000000000000000000000000001634c1c91c4538e561",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        "0x000000000000000000000000799a7dfd4a644dce9228cf54c3f002ef9d3fe05c"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": "0x799a7dfd4a644dce9228cf54c3f002ef9d3fe05c",
+      "value": "409629910305345168737"
+    },
+    {
+      "txHash": "0x8dbf5dc00b88ed5b3d42fdb1544c0677bd1a6a1c8d476e8b91b10c90a9a5460d",
+      "logIndex": 2,
+      "blockNumber": 85941417,
+      "blockHash": "0x0ff950956238b5b4860df9dadd386b9f8538301848aa4edd5b35e386762e2c75",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012de630b80205bd280",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000001bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x1bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "348066057870812893824"
+    },
+    {
+      "txHash": "0xe85a50da06ef9d875a35cc030c7a2da390b9bd8dd6f5cfbb0f905b2575c4d17a",
+      "logIndex": 13,
+      "blockNumber": 85941412,
+      "blockHash": "0x350915d456332619054af9ec9e3bca9e7fc6e94be816f4e61c998a7cc799f6c6",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012e0cda4cc8443cacc",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        "0x000000000000000000000000799a7dfd4a644dce9228cf54c3f002ef9d3fe05c"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": "0x799a7dfd4a644dce9228cf54c3f002ef9d3fe05c",
+      "value": "348240177959792790220"
+    },
+    {
+      "txHash": "0xe7d12aa85f0c3e61ce1a2f419696a49b2b787aea98579fb07b0405447fa90945",
+      "logIndex": 1,
+      "blockNumber": 85935541,
+      "blockHash": "0x0b0f22da740c8e5ae743b063b7429a57675245b79af9cd1784186ebc1a0f40fb",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012de630bb08098cbc6",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000001bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x1bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "348066058078585932742"
+    },
+    {
+      "txHash": "0xd09ed398417535109bce358f86598cdb38b82c074fb45d863007742f96146946",
+      "logIndex": 24,
+      "blockNumber": 85935535,
+      "blockHash": "0xf8408c7673cceb21698ba8c5f003487d0e40872c93a09f13c79a3d78b7f7949f",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012e0cda4fceab2bdca",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        "0x000000000000000000000000799a7dfd4a644dce9228cf54c3f002ef9d3fe05c"
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": "0x799a7dfd4a644dce9228cf54c3f002ef9d3fe05c",
+      "value": "348240178167669767626"
+    },
+    {
+      "txHash": "0x1e47321dccde974dc6b2aa0fc5974b41e7f030a14a812374b05db5bede3b9711",
+      "logIndex": 13,
+      "blockNumber": 85921682,
+      "blockHash": "0x53f791b9a331b506c076681256406fef42db75fc2db6d2574c40fc5e63c09b37",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012de630be0e0d5c5c6",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000001bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da"
+      ],
+      "eventType": "Transfer",
+      "from": "0x1bb49c15b7900e1a55be3a91c6a8bac3754d3036",
+      "to": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "value": "348066058286358971846"
+    },
+    {
+      "txHash": "0xcce0e880a5693596bd28afd97f5ffb881fb8dcaa4364e20081db35e3eaac2247",
+      "logIndex": 5,
+      "blockNumber": 85921676,
+      "blockHash": "0x9f98868344e4b8a3dbcc4318bd915fa07fa4285eb6eac9c440f7a87e75c3323e",
+      "contractAddress": "0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed",
+      "data": "0x000000000000000000000000000000000000000000000012e0cda52d5121b183",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x000000000000000000000000b4998dcca90f1249bc4cf0df2b732bf5034f82da",
+        null
+      ],
+      "eventType": "Transfer",
+      "from": "0xb4998dcca90f1249bc4cf0df2b732bf5034f82da",
+      "to": null,
+      "value": "348240178375546745219",
+      "incomplete": true,
+      "incompleteReason": "Source paste was truncated: the third topic (recipient) is missing. Value recovered from the data field."
+    }
+  ]
+}

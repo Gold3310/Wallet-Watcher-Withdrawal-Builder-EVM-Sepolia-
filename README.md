@@ -506,16 +506,10 @@ are configured in `API_TOKENS` as `<ownerAddress>:<secret>` pairs — the addres
 is the identity the request acts as, and the secret is its bearer credential:
 
 ```
-API_TOKENS=0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE:<secret>
+API_TOKENS=0x<your-owner-address>:<secret>
 ```
 
-The owner below is the one registered in `.env.example`:
-
-```
-0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE
-```
-
-How it behaves:
+No owner ships configured — set your own in `.env`. How it behaves:
 
 - Every route except `GET /health` requires `Authorization: Bearer <secret>`
   whenever any owner is configured.
@@ -532,7 +526,7 @@ Owner addresses are **requesters**, not recipients. To restrict where funds may
 be *sent*, use `WITHDRAWAL_ALLOWLIST` — a different list, empty by default:
 
 ```
-WITHDRAWAL_ALLOWLIST=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+WITHDRAWAL_ALLOWLIST=0x<destination-address>
 ```
 
 Copy the configuration into your `.env` to activate it:
@@ -545,6 +539,56 @@ Note that bearer secrets are only as strong as the secret itself: anyone who
 holds one can act as that owner. If you want cryptographic proof of control
 instead, the next step is request signing — the owner signs each withdrawal with
 the address's key and the service verifies recovery before signing anything.
+
+## Evidence and on-chain verification
+
+`evidence/erc20-transfer-events.json` holds an export of ERC-20 event logs
+(19 rows: 16 `Transfer`, 3 `Approval`) for the token at
+`0x32C3cE734cf52F9429C8a8eC2982e4fd714960Ed`, spanning blocks 85921676–86369971.
+
+**None of it is verified yet.** The export carries no chain id and was collected
+without any RPC or explorer access, so every row starts out unconfirmed. It is
+committed as *evidence*, not as established fact.
+
+Verify it against a node for the chain the logs came from:
+
+```bash
+npm run verify:events -- https://your-rpc-url
+# or with explicit paths
+npm run verify:events -- https://your-rpc-url \
+  --in evidence/erc20-transfer-events.json \
+  --out evidence/erc20-transfer-events.verified.json
+```
+
+For each row the verifier fetches the receipt and checks:
+
+| Check | Failure means |
+|-------|---------------|
+| Transaction exists | `MISSING_TX` — wrong chain, or the hash is wrong |
+| Block number and hash match | `MISMATCH` — the row was recorded against a different block |
+| Contract address at that log index | `MISMATCH` — not the token you think it is |
+| Topics and data byte-for-byte | `MISMATCH` — the decoded amount or parties differ |
+
+It is read-only: it fetches receipts and compares fields, signs nothing, and
+exits non-zero if any checkable row failed. Results are written to
+`evidence/erc20-transfer-events.verified.json` with a per-row status.
+
+Offline analysis, which needs no network:
+
+```ts
+import { loadEvidence, summarize, netFlows, unboundedApprovals } from "./src/domain/evidence/analysis.js";
+
+const { rows } = loadEvidence();
+summarize(rows);          // counts, unique txs/blocks, block range
+netFlows(rows);           // per-address in/out/net from Transfer events
+unboundedApprovals(rows); // approvals set to MAX_UINT256
+```
+
+Caveats carried over from the source data, and still true after verification:
+matching event signatures do not prove token legitimacy, raw `uint256` values are
+not human-readable without the token's decimals, and logs alone support no
+conclusion about intent. Verification establishes that these events are really on
+chain — nothing more.
 
 ## Funding test wallets
 
