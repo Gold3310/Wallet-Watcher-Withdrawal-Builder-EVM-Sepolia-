@@ -131,7 +131,8 @@ describe("accounting", () => {
 
   it("computes share of supply", () => {
     const result = report([0n, 0n, 0n, parseUnits("5", 18)]);
-    expect(result.holders[3].shareOfSupply).toBe("11.7395");
+    // 5 / 42.591 = 11.739569% -> 11.7396, matching how a block explorer rounds.
+    expect(result.holders[3].shareOfSupply).toBe("11.7396");
   });
 
   it("concludes nothing when supply cannot be read", () => {
@@ -140,6 +141,78 @@ describe("accounting", () => {
     expect(result.totalSupplyRaw).toBeNull();
     expect(result.unaccountedRaw).toBeNull();
     expect(result.verdict).toMatch(/nothing is concluded here/);
+  });
+});
+
+describe("supply held outside this service", () => {
+  // The real holder list, from Etherscan, 2026-10-28: 34.505 + 7.485 + 0.45.
+  const UMA_STORE = "0x54f44eA3D2e7aA0ac089c4d8F7C93C27844057BF";
+  const SECOND = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+  const HUBPOOL = "0xc186fA914353c44b2E33eBE05f21846F1048bEda";
+
+  const REAL_HOLDERS: HolderOfInterest[] = [
+    holder("the contract itself", CONTRACT, false),
+    holder("service owner address", OWNER, false),
+    holder("contract deployer", CREATOR, false),
+    holder("UMA Store", UMA_STORE, false),
+    holder("second-largest holder", SECOND, false),
+    holder("HubPool V2", HUBPOOL, false),
+    holder("derived wallet 0", WALLET_0, true),
+  ];
+
+  const REAL_BALANCES: (bigint | null)[] = [
+    0n, // the contract holds none of its own token
+    0n, // the service owner is not a holder
+    0n,
+    parseUnits("34.505", 18),
+    parseUnits("7.485", 18),
+    parseUnits("0.45", 18),
+    0n, // no derived wallet holds any
+  ];
+
+  function realReport() {
+    return buildHolderReport({
+      contract: CONTRACT,
+      holders: REAL_HOLDERS,
+      decimals: 18,
+      symbol: "ABT",
+      totalSupply: SUPPLY,
+      ethReserve: RESERVE,
+      balances: REAL_BALANCES,
+    });
+  }
+
+  it("accounts for the whole supply once the real holders are listed", () => {
+    const result = realReport();
+
+    expect(result.reportedTotalFormatted).toBe("42.44");
+    expect(result.unaccountedFormatted).toBe("0.151");
+  });
+
+  it("attributes everything to third parties", () => {
+    const result = realReport();
+
+    expect(result.thirdPartyTotalFormatted).toBe("42.591");
+    expect(result.verdict).toMatch(
+      /Every ABT in existence .* sits at addresses this service cannot sign for/,
+    );
+  });
+
+  it("names the largest holder's share", () => {
+    const uma = realReport().holders[3];
+
+    expect(uma.label).toBe("UMA Store");
+    expect(uma.shareOfSupply).toBe("81.0148");
+    expect(uma.canWithdrawNow).toBe(true);
+    // A real, withdrawable balance — just not one this service can touch.
+    expect(uma.signableByService).toBe(false);
+  });
+
+  it("still concludes the ETH is unreachable", () => {
+    const verdict = realReport().verdict;
+
+    expect(verdict).toMatch(/not reachable from here/);
+    expect(verdict).toMatch(/only by holding the token/);
   });
 });
 
@@ -176,7 +249,7 @@ describe("readHolderReport against a provider", () => {
           const [queried] = trackedContractInterface.decodeFunctionData(
             "balanceOf",
             data,
-          ) as [string];
+          ) as unknown as [string];
           seen.push(queried.toLowerCase());
           return trackedContractInterface.encodeFunctionResult("balanceOf", [
             balances[queried.toLowerCase()] ?? 0n,

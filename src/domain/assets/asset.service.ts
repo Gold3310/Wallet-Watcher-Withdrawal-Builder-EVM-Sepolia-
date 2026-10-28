@@ -19,6 +19,7 @@ import { getAllWallets, getWalletByIndex, WalletRow } from "../../infra/db/datab
 import { getProvider } from "../../infra/rpc/provider.js";
 import {
   CONTRACT_CREATOR,
+  KNOWN_TOKEN_HOLDERS,
   hubPoolInterface,
   trackedContractInterface,
   TRANSFER_RESTRICTION,
@@ -33,6 +34,7 @@ import {
 export {
   CONTRACT_CREATOR,
   HUB_POOL_ABI,
+  KNOWN_TOKEN_HOLDERS,
   HUB_POOL_IMMUTABLE,
   hubPoolInterface,
   TRACKED_CONTRACT_ABI,
@@ -480,6 +482,16 @@ export function holdersOfInterest(): HolderOfInterest[][] {
       address: CONTRACT_CREATOR,
       signableByService: false,
     });
+
+    // Whoever actually holds the token. Included so the report can account for
+    // the whole supply rather than leaving it as an unexplained remainder.
+    for (const known of KNOWN_TOKEN_HOLDERS) {
+      holders.push({
+        label: known.label,
+        address: known.address,
+        signableByService: false,
+      });
+    }
 
     for (const wallet of getAllWallets()) {
       holders.push({

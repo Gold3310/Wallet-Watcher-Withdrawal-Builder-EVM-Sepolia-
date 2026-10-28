@@ -875,6 +875,32 @@ reports:
   whole supply, none of these addresses holds the token
 - a plain `verdict` reading the numbers, so nothing has to be inferred
 
+### Who holds it, read on 2026-10-28
+
+| Holder | Balance | Share of supply |
+|---|---|---|
+| UMA Store (`0x54f44eA3…`) | 34.5050 ABT | 81.01% |
+| `0xf7bAc63f…` | 7.4850 ABT | 17.57% |
+| Across Protocol HubPool V2 (`0xc186fA91…`) | 0.4500 ABT | 1.06% |
+| Risk Labs Deployer (`0x9A8f92a8…`) | dust | — |
+
+That accounts for the entire 42.591 supply. The contract holds none of it in
+itself, and neither the service owner nor any derived wallet appears anywhere in
+the holder list.
+
+### Changing the on-chain owner: not possible, and it would not help
+
+`transferOwnership` is `onlyOwner`, so it can only be sent by the current owner
+— the Risk Labs deployer, whose key this service neither holds nor can derive.
+
+And the role would not pay for itself if you had it. `Ownable` exposes
+`setProposer`, `transferOwnership` and `renounceOwnership`. There is no
+owner-withdraw, no mint, no rescue. The owner administers proposer rights for
+transfers *into the hubPool* and nothing else.
+
+Being the owner of this contract is not being a holder of the token. Only
+holders can redeem the ETH.
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.

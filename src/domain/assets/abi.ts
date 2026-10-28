@@ -323,6 +323,43 @@ export const CONTRACT_CREATOR =
   "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";
 
 /**
+ * The addresses that actually hold the tracked token, from Etherscan's holder
+ * list as read on 2026-10-28. Recorded because "who holds it" is the question
+ * that decides whether any of the contract's ETH is reachable, and these are
+ * the addresses that answer it.
+ *
+ * The figures below are the observed snapshot, useful for sanity-checking a
+ * live read — the report re-reads the balances, it does not trust these:
+ *
+ *   0x54f44eA3…  UMA Store                    34.5050  (81.01%)
+ *   0xf7bAc63f…  unnamed                       7.4850  (17.57%)
+ *   0xc186fA91…  Across Protocol HubPool V2    0.4500  ( 1.06%)
+ *   0x9A8f92a8…  Risk Labs Deployer              dust
+ *
+ * Two things follow, and both are worth stating in code rather than in chat:
+ *
+ * - The contract holds none of its own token. It is the ledger that records
+ *   these balances, not a holder of them.
+ * - None of these addresses is this service's owner, and none is a wallet it
+ *   can sign for. The supply sits entirely outside this service's control, so
+ *   the ETH reserve behind it is not redeemable from here at any point.
+ */
+export const KNOWN_TOKEN_HOLDERS: { label: string; address: string }[] = [
+  {
+    label: "UMA Store (largest holder)",
+    address: "0x54f44eA3D2e7aA0ac089c4d8F7C93C27844057BF",
+  },
+  {
+    label: "second-largest holder",
+    address: "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c",
+  },
+  {
+    label: "Across Protocol HubPool V2 (also the restricted destination)",
+    address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
+  },
+];
+
+/**
  * Just the one function BondToken calls on the hubPool, enough to decode the
  * RootBundle struct and read `proposer` out of it. 7 words = 224 bytes, which
  * matches the staticcall in the bytecode exactly.

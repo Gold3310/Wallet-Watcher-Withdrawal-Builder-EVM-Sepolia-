@@ -87,6 +87,14 @@ export interface HolderReport {
    */
   unaccountedRaw: string | null;
   unaccountedFormatted: string | null;
+  /**
+   * Supply held by addresses this service cannot sign for, excluding the
+   * contract's own entry. When this is the whole supply, the entire float sits
+   * outside this service's control and the reserve behind it is unreachable
+   * from here.
+   */
+  thirdPartyTotalRaw: string | null;
+  thirdPartyTotalFormatted: string | null;
   /** Plain reading of the numbers above, so nobody has to infer it. */
   verdict: string;
 }
@@ -141,8 +149,9 @@ function percentage(part: bigint, whole: bigint): string | null {
   if (whole === 0n) {
     return null;
   }
-  // Basis points of a percent: four decimal places, no float drift.
-  const scaled = (part * 1_000_000n) / whole;
+  // Hundredths of a basis point, rounded to four decimal places so the figure
+  // matches what a block explorer shows rather than landing one digit short.
+  const scaled = (part * 1_000_000n + whole / 2n) / whole;
   const wholePart = scaled / 10_000n;
   const fraction = (scaled % 10_000n).toString().padStart(4, "0");
   return `${wholePart}.${fraction}`;
@@ -226,6 +235,18 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
     0n,
   );
 
+  const ownBalance =
+    contractRow?.balanceRaw === null || contractRow?.balanceRaw === undefined
+      ? null
+      : BigInt(contractRow.balanceRaw);
+
+  const thirdParty =
+    totalSupply === null || ownBalance === null
+      ? null
+      : totalSupply - signableTotal - ownBalance < 0n
+        ? 0n
+        : totalSupply - signableTotal - ownBalance;
+
   return {
     contract,
     symbol,
@@ -245,6 +266,9 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
       totalSupply === null
         ? null
         : formatUnits(totalSupply - known, effectiveDecimals),
+    thirdPartyTotalRaw: thirdParty === null ? null : thirdParty.toString(),
+    thirdPartyTotalFormatted:
+      thirdParty === null ? null : formatUnits(thirdParty, effectiveDecimals),
     verdict: verdictFor({
       symbol,
       decimals: effectiveDecimals,
@@ -252,6 +276,7 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
       ethReserve,
       contractOwnBalance: contractRow?.balanceRaw ?? null,
       signableTotal,
+      thirdPartyTotal: thirdParty,
     }),
   };
 }
@@ -263,6 +288,7 @@ interface VerdictInput {
   ethReserve: bigint | null;
   contractOwnBalance: string | null;
   signableTotal: bigint;
+  thirdPartyTotal: bigint | null;
 }
 
 function verdictFor(input: VerdictInput): string {
@@ -295,6 +321,25 @@ function verdictFor(input: VerdictInput): string {
       `${input.ethReserve === null ? "an unreadable" : formatEther(input.ethReserve)} ` +
       `ETH reserve.`,
   );
+
+  if (
+    input.signableTotal === 0n &&
+    input.thirdPartyTotal !== null &&
+    input.thirdPartyTotal > 0n
+  ) {
+    const share =
+      input.totalSupply === 0n
+        ? null
+        : percentage(input.thirdPartyTotal, input.totalSupply);
+
+    parts.push(
+      `Every ${token} in existence — ` +
+        `${formatUnits(input.thirdPartyTotal, input.decimals)}` +
+        `${share === null ? "" : `, ${share}% of supply`} — sits at addresses ` +
+        `this service cannot sign for. Naming them does not bring them closer: ` +
+        `withdraw() must be called by a holder, and none of these is one.`,
+    );
+  }
 
   if (input.signableTotal > 0n) {
     parts.push(
