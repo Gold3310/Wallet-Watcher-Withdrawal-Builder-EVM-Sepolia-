@@ -18,17 +18,20 @@ import { config } from "../../config/index.js";
 import { getAllWallets, getWalletByIndex, WalletRow } from "../../infra/db/database.js";
 import { getProvider } from "../../infra/rpc/provider.js";
 import {
+  hubPoolInterface,
   trackedContractInterface,
-  TRANSFERS_RESTRICTED,
+  TRANSFER_RESTRICTION,
   UNWRAP_FUNCTION,
 } from "./abi.js";
 
 export {
+  HUB_POOL_ABI,
   HUB_POOL_IMMUTABLE,
-  TRANSFERS_RESTRICTED,
+  hubPoolInterface,
   TRACKED_CONTRACT_ABI,
-  UNWRAP_FUNCTION,
   trackedContractInterface,
+  TRANSFER_RESTRICTION,
+  UNWRAP_FUNCTION,
 } from "./abi.js";
 
 /** Kept for callers that only want the ERC-20 subset. */
@@ -48,11 +51,15 @@ export interface TokenAsset {
   /** Human-readable balance, or null when decimals could not be read. */
   balanceFormatted: string | null;
   /**
-   * Whether this holder may move the balance with `transfer`. Null when the
-   * contract does not expose a proposer allowlist, so the answer is unknown
+   * Whether this holder may transfer to the contract's restricted destination,
+   * which for BondToken is the hubPool — the only transfer that is gated at
+   * all. Transfers to every other address are unrestricted.
+   *
+   * `true` means nothing would block the transfer. `null` means the contract
+   * publishes no way to tell, or a read failed, so the answer is unknown
    * rather than assumed to be yes.
    */
-  canTransfer: boolean | null;
+  canTransferToRestrictedDestination: boolean | null;
   error: string | null;
 }
 
@@ -68,9 +75,14 @@ export interface ContractInfo {
   owner: string | null;
   /** The hubPool the contract was deployed against, pinned at construction. */
   hubPool: string | null;
-  /** True when transfer/transferFrom are gated. Static per ABI. */
-  transfersRestricted: boolean;
-  /** Function to call to turn a restricted balance back into ETH. */
+  /**
+   * The one destination that is gated, when the contract has such a rule.
+   * Transfers to any other address are unrestricted.
+   */
+  restrictedDestination: string | null;
+  /** Plain statement of the gate, from the verified source. */
+  restriction: string;
+  /** Function to call to turn a balance back into ETH. */
   unwrapFunction: string | null;
   error: string | null;
 }
@@ -163,13 +175,45 @@ async function readAddress(
   });
 }
 
-/** True when the contract's allowlist permits this holder to transfer. */
-async function readCanTransfer(
+/** The address currently recorded as the pending root-bundle proposer. */
+async function readRootBundleProposer(
+  provider: CallProvider,
+  hubPool: string,
+): Promise<string | null> {
+  return callOrNull(async () => {
+    const result = await provider.call({
+      to: hubPool,
+      data: hubPoolInterface.encodeFunctionData("rootBundleProposal"),
+    });
+    const root = hubPoolInterface.decodeFunctionResult(
+      "rootBundleProposal",
+      result,
+    )[0];
+    return (root as { proposer: string }).proposer;
+  });
+}
+
+/**
+ * Evaluates the contract's one gate, straight from the verified source:
+ *
+ *     if (dst == address(hubPool)) {
+ *         require(proposers[src] || hubPool.rootBundleProposal().proposer != src,
+ *                 "Transfer not permitted");
+ *     }
+ *
+ * With no restricted destination there is nothing to gate, so nothing blocks a
+ * transfer.
+ */
+async function readCanTransferToRestrictedDestination(
   provider: CallProvider,
   token: string,
   holder: string,
-  hubPool: string | null,
+  restrictedDestination: string | null,
 ): Promise<boolean | null> {
+  if (restrictedDestination === null) {
+    return true;
+  }
+
   const proposer = await callOrNull(async () => {
     const result = await provider.call({
       to: token,
@@ -185,11 +229,18 @@ async function readCanTransfer(
     return null;
   }
 
-  // The hubPool itself is always allowed to move tokens, allowlist or not.
-  return (
-    proposer ||
-    (hubPool !== null && holder.toLowerCase() === hubPool.toLowerCase())
-  );
+  if (proposer) {
+    return true;
+  }
+
+  const current = await readRootBundleProposer(provider, restrictedDestination);
+
+  if (current === null) {
+    return null;
+  }
+
+  // Blocked only while you are the pending proposer and not approved.
+  return current.toLowerCase() !== holder.toLowerCase();
 }
 
 export async function readTokenAsset(
@@ -206,17 +257,18 @@ export async function readTokenAsset(
       decimals: null,
       balanceRaw: "0",
       balanceFormatted: null,
-      canTransfer: null,
+      canTransferToRestrictedDestination: null,
       error: "balanceOf call failed — not a token, or the wrong chain",
     };
   }
 
   const hubPool = await readAddress(provider, token, "hubPool");
-  const [decimals, symbol, canTransfer] = await Promise.all([
-    readUint(provider, token, "decimals"),
-    readString(provider, token, "symbol"),
-    readCanTransfer(provider, token, holder, hubPool),
-  ]);
+  const [decimals, symbol, canTransferToRestrictedDestination] =
+    await Promise.all([
+      readUint(provider, token, "decimals"),
+      readString(provider, token, "symbol"),
+      readCanTransferToRestrictedDestination(provider, token, holder, hubPool),
+    ]);
 
   return {
     address: token,
@@ -224,7 +276,7 @@ export async function readTokenAsset(
     decimals: decimals === null ? null : Number(decimals),
     balanceRaw: balance.toString(),
     balanceFormatted: decimals === null ? null : formatUnits(balance, Number(decimals)),
-    canTransfer,
+    canTransferToRestrictedDestination,
     error: null,
   };
 }
@@ -255,7 +307,8 @@ export async function readContractInfo(
         : formatUnits(totalSupply, Number(decimals)),
     owner,
     hubPool,
-    transfersRestricted: TRANSFERS_RESTRICTED,
+    restrictedDestination: hubPool,
+    restriction: TRANSFER_RESTRICTION,
     unwrapFunction: UNWRAP_FUNCTION,
     error: null,
   };

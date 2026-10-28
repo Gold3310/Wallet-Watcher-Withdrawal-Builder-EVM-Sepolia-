@@ -1,33 +1,48 @@
 /**
- * The tracked contract's ABI, verbatim from the verified source on Etherscan
- * for 0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea.
+ * The tracked contract's ABI and source, verified on Etherscan for
+ * 0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea.
  *
- * Why the real ABI matters here instead of a minimal ERC-20 fragment: this is
- * **not** a plain ERC-20. It is a WETH-style wrapper whose `transfer` and
- * `transferFrom` are gated. Reading it as a generic token would report a
- * balance you cannot move, and then fail at the worst moment.
+ * It is Across Protocol's **BondToken** ("Across Bond Token", ABT) — WETH9 with
+ * an Ownable proposer allowlist bolted on. Solidity 0.8.18, viaIR, optimiser at
+ * 1,000,000 runs. `hubPool` is an immutable pinned at construction to
+ * 0xc186fA914353c44b2E33eBE05f21846F1048bEda — Across' Hub Pool V2 on Ethereum
+ * mainnet — so this is a mainnet contract.
  *
- * Verified against the deployed bytecode:
+ * THE PART THAT IS EASY TO GET WRONG. BondToken overrides exactly one function:
  *
- * - All 17 function selectors in this ABI are dispatched by the runtime code,
- *   so the interface below is complete — there is no hidden function.
- * - `transfer(address,uint256)` and `transferFrom(address,address,uint256)`
- *   are the only two functions that route through the guarded helper at
- *   runtime offset 0x0c02. That helper reverts with **"Transfer not
- *   permitted"** unless the sender is the `hubPool`, an approved proposer
- *   (`proposers(sender) == true`), or an authorising STATICCALL to the
- *   hubPool (selector 0x4144fd61, 7 words of arguments) approves the move.
- * - `withdraw(uint256)` is a standard WETH unwrap and is **not** gated. It
- *   decrements `balanceOf(msg.sender)`, sends that much ETH to `msg.sender`
- *   and emits `Withdrawal`. This is the only path out of a balance you hold.
- * - `deposit()` is payable and mints, ungated.
- * - `setProposer`, `transferOwnership` and `renounceOwnership` are Ownable;
- *   they revert with "Ownable: caller is not the owner" for anyone else.
+ *     function transferFrom(address src, address dst, uint256 amt)
+ *         public override returns (bool)
+ *     {
+ *         if (dst == address(hubPool)) {
+ *             require(
+ *                 proposers[src] || hubPool.rootBundleProposal().proposer != src,
+ *                 "Transfer not permitted"
+ *             );
+ *         }
+ *         return super.transferFrom(src, dst, amt);
+ *     }
  *
- * The `hubPool` is an immutable pinned at construction to
- * 0xc186fA914353c44b2E33eBE05f21846F1048bEda — Across Protocol's Hub Pool V2
- * on Ethereum mainnet. **This is a mainnet contract.** Tracking it on a
- * testnet reports nothing, because the address is an empty account there.
+ * The gate is **destination-scoped**, not sender-scoped. A holder can transfer
+ * to any address except the hubPool with no permission whatsoever. Sending to
+ * the hubPool is blocked only while you are the current pending root-bundle
+ * proposer and not an approved proposer — that is the bond-staking path, not
+ * ordinary use.
+ *
+ * So there are two ways out of a balance, not one:
+ *
+ *   1. `transfer` it to any ordinary address, or
+ *   2. `withdraw(uint256)` it — ungated WETH9 unwrap, burns ABT and sends that
+ *      much ETH to the caller.
+ *
+ * Cross-checked against the deployed bytecode: transfer() and transferFrom()
+ * are the only functions routed through the guarded helper at 0x0c02, and the
+ * only external call they make is a STATICCALL of 224 bytes to the hubPool with
+ * selector 0x4144fd61 — which is `rootBundleProposal()`, returning the
+ * 7-word RootBundle struct whose `proposer` field the require() tests.
+ *
+ * ABT is ETH-backed: `totalSupply()` returns `address(this).balance`, and the
+ * only way in or out is `deposit()` / `withdraw()`. One ABT is redeemable for
+ * one wei of ETH provided the contract holds it.
  */
 import { Interface, type InterfaceAbi } from "ethers";
 
@@ -267,25 +282,37 @@ export const TRACKED_CONTRACT_ABI: InterfaceAbi = [
 export const trackedContractInterface = new Interface(TRACKED_CONTRACT_ABI);
 
 /**
- * True: `transfer`/`transferFrom` both route through the guarded helper and
- * revert "Transfer not permitted" for unapproved senders. Confirmed against
- * the deployed bytecode, not inferred from the ABI alone.
- *
- * A balance in this contract is therefore NOT spendable by the normal
- * withdrawal path. See `UNWRAP_FUNCTION`.
+ * The gate is destination-scoped: only transfers *to the hubPool* are checked.
+ * Transfers to every other address are unrestricted.
  */
-export const TRANSFERS_RESTRICTED = true;
+export const TRANSFER_RESTRICTION =
+  "Transfers to any address are unrestricted, except to the hubPool: sending " +
+  "there requires proposer approval, or that you are not the current " +
+  "root-bundle proposer.";
 
 /**
- * The way out of a restricted balance: `withdraw(uint256)` burns the caller's
- * wrapped balance and sends that much ETH to the caller, ungated. Unwrap
- * first, then move the ETH with an ordinary transfer.
+ * Ungated in the base WETH9 implementation: burns the caller's ABT and sends
+ * that much ETH to the caller. One of two ways to move a balance, the other
+ * being an ordinary transfer to any non-hubPool address.
  */
 export const UNWRAP_FUNCTION = "withdraw";
 
 /**
  * Immutable pinned at construction. Its value is what identifies this contract
- * as a mainnet deployment of Across' hub-pool-aware WETH.
+ * as a mainnet deployment of Across' BondToken.
  */
 export const HUB_POOL_IMMUTABLE =
   "0xc186fA914353c44b2E33eBE05f21846F1048bEda";
+
+/**
+ * Just the one function BondToken calls on the hubPool, enough to decode the
+ * RootBundle struct and read `proposer` out of it. 7 words = 224 bytes, which
+ * matches the staticcall in the bytecode exactly.
+ */
+export const HUB_POOL_ABI = [
+  "function rootBundleProposal() view returns (tuple(bytes32 poolRebalanceRoot, bytes32 relayerRefundRoot, bytes32 slowRelayRoot, uint256 claimedBitMap, address proposer, uint8 unclaimedPoolRebalanceLeafCount, uint32 challengePeriodEndTimestamp))",
+] as const;
+
+export const hubPoolInterface = new Interface(
+  HUB_POOL_ABI as unknown as string[],
+);

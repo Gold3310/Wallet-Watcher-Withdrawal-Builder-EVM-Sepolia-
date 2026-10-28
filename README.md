@@ -283,14 +283,15 @@ balances, which the poller owns.
   "contracts": [
     {
       "address": "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea",
-      "name": "Wrapped Ether",
-      "symbol": "WETH",
+      "name": "Across Bond Token",
+      "symbol": "ABT",
       "decimals": 18,
       "totalSupplyRaw": "1000000000000000000000",
       "totalSupplyFormatted": "1000.0",
       "owner": "0x…",
       "hubPool": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
-      "transfersRestricted": true,
+      "restrictedDestination": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
+      "restriction": "Transfers to any address are unrestricted, except to the hubPool…",
       "unwrapFunction": "withdraw",
       "error": null
     }
@@ -321,7 +322,7 @@ balances, which the poller owns.
           "decimals": 18,
           "balanceRaw": "1234500000000000000000",
           "balanceFormatted": "1234.5",
-          "canTransfer": false,
+          "canTransferToRestrictedDestination": true,
           "error": null
         }
       ]
@@ -339,36 +340,63 @@ Two behaviours worth knowing, because real tokens are messy:
   than failing the whole request. A `balanceOf` failure across **every** token
   usually means the RPC is pointed at the wrong chain.
 
-### The tracked contract gates transfers
+### The tracked contract is Across' Bond Token
 
-`0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea` is a WETH-style wrapper, not a
-plain ERC-20. Its `transfer` and `transferFrom` revert with **"Transfer not
-permitted"** unless the sender is the `hubPool`, an approved proposer, or the
-hubPool authorises the move. That is confirmed against the deployed bytecode,
-not assumed from the ABI.
+`0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea` is Across Protocol's **BondToken**
+— "Across Bond Token", **ABT**. It is WETH9 plus an Ownable proposer allowlist,
+compiled with solc 0.8.18 (viaIR, optimiser 1,000,000 runs). Its `hubPool` is
+pinned at construction to `0xc186fA914353c44b2E33eBE05f21846F1048bEda`, Across'
+Hub Pool V2 on **Ethereum mainnet**, so this is a mainnet contract.
 
-What follows from that:
+It overrides exactly one function:
 
-- **A balance you hold is not automatically a balance you can send.** Every
-  token entry in `GET /assets` carries `canTransfer`, so the restriction is
-  visible instead of becoming a surprise at signing time.
+```solidity
+function transferFrom(address src, address dst, uint256 amt)
+    public override returns (bool)
+{
+    if (dst == address(hubPool)) {
+        require(
+            proposers[src] || hubPool.rootBundleProposal().proposer != src,
+            "Transfer not permitted"
+        );
+    }
+    return super.transferFrom(src, dst, amt);
+}
+```
+
+**The gate is destination-scoped, not sender-scoped.** In plain terms:
+
+- You can transfer ABT to **any ordinary address**, freely. No permission.
+- You can **unwrap it to ETH** with `withdraw(uint256)`, which is not gated.
+- The only transfer that can revert is one **to the hubPool**, and only while you
+  are the pending root-bundle proposer and not an approved proposer. That is the
+  bond-staking path, not ordinary use.
+
+`GET /assets` reports `canTransferToRestrictedDestination` per wallet: `true`
+means nothing would block a hubPool transfer, `false` means it would revert, and
+`null` means it could not be determined.
+
+Two things that remain true regardless:
+
 - The contract's `owner()` is an on-chain role that can call
   `setProposer(address,bool)`. **It is not this service's `OWNER_ADDRESS`** —
   the two are unrelated. Becoming the contract's owner requires the current
-  contract owner to call `transferOwnership`; no configuration file here can
-  do it, and this service has no such key.
-- Its `hubPool` is pinned at construction to `0xc186fA914353c44b2E33eBE05f21846F1048bEda`
-  — Across Protocol's Hub Pool V2 on **Ethereum mainnet**. This is a mainnet
-  contract. Tracking it on Sepolia reports an empty account.
+  contract owner to call `transferOwnership`; no configuration file here can do
+  it, and this service holds no such key.
+- ABT is ETH-backed: `totalSupply()` returns `address(this).balance`, so 1 ABT
+  is redeemable for 1 wei of ETH **provided the contract actually holds it**.
+  Compare your balance against `contracts[].totalSupplyRaw` before relying on
+  that.
 
-The way out of a restricted balance is `withdraw(uint256)`, which is **not**
-gated: it burns the caller's wrapped balance and sends that much ETH to the
-caller. That is what `POST /assets/unwrap` does.
+One implementation detail worth knowing: WETH9's `withdraw` pays out with
+`transfer()`, which forwards only the 2300-gas stipend. That is fine for an EOA
+wallet, and will revert for a contract recipient without a cheap `receive()`.
 
 ### `POST /assets/unwrap`
 
-Step one of two. Unwrap a wrapped balance into ETH **in the same wallet**, then
-move it on with `POST /withdrawals`.
+One of two ways to turn ABT into ETH — the other being a plain `transfer` to
+any non-hubPool address. Use this when you want the ETH **in the same wallet**,
+for example before moving it on with `POST /withdrawals`.
 
 ```bash
 curl -s localhost:3000/assets/unwrap \

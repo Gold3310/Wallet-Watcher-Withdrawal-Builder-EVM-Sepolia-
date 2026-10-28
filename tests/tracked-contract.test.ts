@@ -5,8 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { withConfig } from "./helpers/withConfig.js";
 import {
   HUB_POOL_IMMUTABLE,
-  TRANSFERS_RESTRICTED,
+  hubPoolInterface,
   trackedContractInterface,
+  TRANSFER_RESTRICTION,
 } from "../src/domain/assets/abi.js";
 
 const CONTRACT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
@@ -15,6 +16,8 @@ const OWNER_CHECKSUMMED = getAddress(OWNER);
 const HUB_POOL = HUB_POOL_IMMUTABLE;
 const OTHER_TOKEN = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const TX_HASH = "0x" + "ab".repeat(32);
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ZERO_BYTES32 = "0x" + "00".repeat(32);
 
 const TEST_MNEMONIC =
   "test test test test test test test test test test test junk";
@@ -43,6 +46,8 @@ interface MockOptions {
   hubPool?: Record<string, string>;
   /** Lowercase addresses allowed to transfer, per lowercase contract. */
   proposers?: Record<string, string[]>;
+  /** Pending root-bundle proposer, per lowercase hubPool address. */
+  rootBundleProposer?: Record<string, string>;
   /** Calls to make revert, keyed by lowercase contract address. */
   failing?: Record<string, string[]>;
   broadcast?: ReturnType<typeof vi.fn>;
@@ -64,7 +69,9 @@ function mockProvider(options: MockOptions = {}) {
       options.broadcast ?? vi.fn().mockResolvedValue({ hash: TX_HASH }),
     call: vi.fn(async ({ to, data }: { to: string; data: string }) => {
       const key = to.toLowerCase();
-      const name = trackedContractInterface.getFunction(data.slice(0, 10))?.name;
+      const name =
+        trackedContractInterface.getFunction(data.slice(0, 10))?.name ??
+        hubPoolInterface.getFunction(data.slice(0, 10))?.name;
 
       if (options.failing?.[key]?.includes(name ?? "")) {
         throw new Error(`${name} reverted`);
@@ -92,6 +99,20 @@ function mockProvider(options: MockOptions = {}) {
           );
           const allowed = options.proposers?.[key] ?? [];
           return enc("proposers", [allowed.includes(String(holder).toLowerCase())]);
+        }
+        case "rootBundleProposal": {
+          const proposer = options.rootBundleProposer?.[key] ?? ZERO_ADDRESS;
+          return hubPoolInterface.encodeFunctionResult("rootBundleProposal", [
+            [
+              ZERO_BYTES32,
+              ZERO_BYTES32,
+              ZERO_BYTES32,
+              0n,
+              proposer,
+              0,
+              0,
+            ],
+          ]);
         }
         default:
           throw new Error(`unexpected call: ${name}`);
@@ -176,20 +197,20 @@ describe("tracked contract ABI", () => {
     );
   });
 
-  it("marks transfers as restricted", () => {
-    expect(TRANSFERS_RESTRICTED).toBe(true);
+  it("states the gate as destination-scoped", () => {
+    expect(TRANSFER_RESTRICTION).toMatch(/except to the hubPool/);
   });
 });
 
-describe("restricted transfer reporting", () => {
+describe("destination-scoped transfer gate", () => {
   const HOLDER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // wallet 0 of the test mnemonic
 
-  it("reports canTransfer true for an approved proposer", async () => {
+  it("allows an approved proposer to send to the hubPool", async () => {
     await withTracked(
       { TRACKED_CONTRACT: CONTRACT },
       async ({ assets }) => {
         const [wallet] = await assets.getAllWalletAssets();
-        expect(wallet!.tokens[0]!.canTransfer).toBe(true);
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBe(true);
       },
       {
         balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
@@ -198,75 +219,93 @@ describe("restricted transfer reporting", () => {
     );
   });
 
-  it("reports canTransfer false for a holder that is not a proposer", async () => {
+  it("allows an unapproved holder who is not the pending proposer", async () => {
     await withTracked(
       { TRACKED_CONTRACT: CONTRACT },
       async ({ assets }) => {
         const [wallet] = await assets.getAllWalletAssets();
-        expect(wallet!.tokens[0]!.canTransfer).toBe(false);
-        // The balance is still reported: you own it, you just cannot move it.
-        expect(wallet!.tokens[0]!.balanceFormatted).toBe("5.0");
+        // Someone else is the pending proposer, so the gate does not bite.
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBe(true);
       },
-      { balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) } },
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        rootBundleProposer: { [HUB_POOL.toLowerCase()]: ZERO_ADDRESS },
+      },
     );
   });
 
-  it("treats the hubPool itself as always able to transfer", async () => {
+  it("blocks only while you are the pending proposer and unapproved", async () => {
     await withTracked(
       { TRACKED_CONTRACT: CONTRACT },
       async ({ assets }) => {
-        const info = await assets.getTrackedContractInfo();
-        expect(info[0]!.hubPool).toBe(HUB_POOL);
-
-        const asset = await assets.readTokenAsset(
-          {
-            call: async ({ data }) => {
-              const name = trackedContractInterface.getFunction(
-                data.slice(0, 10),
-              )?.name;
-              if (name === "proposers") {
-                return enc("proposers", [false]);
-              }
-              if (name === "hubPool") {
-                return enc("hubPool", [HUB_POOL]);
-              }
-              return enc("balanceOf", [parseUnits("1", 18)]);
-            },
-            getBalance: async () => 0n,
-          },
-          CONTRACT,
-          HUB_POOL,
-        );
-
-        expect(asset.canTransfer).toBe(true);
+        const [wallet] = await assets.getAllWalletAssets();
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBe(false);
+        // The balance is still reported: it is only the hubPool that is closed.
+        expect(wallet!.tokens[0]!.balanceFormatted).toBe("5.0");
       },
-      {},
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        rootBundleProposer: { [HUB_POOL.toLowerCase()]: HOLDER },
+      },
     );
   });
 
-  it("leaves canTransfer unknown when the contract has no proposer list", async () => {
+  it("leaves the answer unknown when the proposer list cannot be read", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ assets }) => {
+        const [wallet] = await assets.getAllWalletAssets();
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBeNull();
+      },
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        failing: { [CONTRACT.toLowerCase()]: ["proposers"] },
+      },
+    );
+  });
+
+  it("leaves the answer unknown when the pending proposer cannot be read", async () => {
+    await withTracked(
+      { TRACKED_CONTRACT: CONTRACT },
+      async ({ assets }) => {
+        const [wallet] = await assets.getAllWalletAssets();
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBeNull();
+      },
+      {
+        balances: { [CONTRACT.toLowerCase()]: parseUnits("5", 18) },
+        failing: { [HUB_POOL.toLowerCase()]: ["rootBundleProposal"] },
+      },
+    );
+  });
+
+  it("reports no gate at all when the contract has no hubPool", async () => {
     await withTracked(
       { TRACKED_CONTRACT: OTHER_TOKEN },
       async ({ assets }) => {
+        const [info] = await assets.getTrackedContractInfo();
+        expect(info!.restrictedDestination).toBeNull();
+
         const [wallet] = await assets.getAllWalletAssets();
-        expect(wallet!.tokens[0]!.canTransfer).toBeNull();
+        expect(wallet!.tokens[0]!.canTransferToRestrictedDestination).toBe(true);
       },
       {
         balances: { [OTHER_TOKEN.toLowerCase()]: parseUnits("5", 18) },
-        failing: { [OTHER_TOKEN.toLowerCase()]: ["proposers"] },
+        failing: { [OTHER_TOKEN.toLowerCase()]: ["hubPool"] },
       },
     );
   });
 
-  it("reports the contract's own owner and hubPool separately from balances", async () => {
+  it("reports the gate on the contract, and only for the hubPool", async () => {
     await withTracked(
       { TRACKED_CONTRACT: CONTRACT },
       async ({ assets }) => {
         const [info] = await assets.getTrackedContractInfo();
 
-        expect(info!.owner).toBe(OWNER_CHECKSUMMED);
         expect(info!.hubPool).toBe(HUB_POOL);
-        expect(info!.transfersRestricted).toBe(true);
+        expect(info!.restrictedDestination).toBe(HUB_POOL);
+        expect(info!.restriction).toBe(TRANSFER_RESTRICTION);
+        expect(info!.restriction).toMatch(/except to the hubPool/);
+        expect(info!.owner).toBe(OWNER_CHECKSUMMED);
         expect(info!.unwrapFunction).toBe("withdraw");
         expect(info!.totalSupplyFormatted).toBe("1000.0");
         expect(info!.symbol).toBe("WETH");
