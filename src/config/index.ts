@@ -1,4 +1,4 @@
-import { getAddress, isAddress } from "ethers";
+import { getAddress, isAddress, isHexString } from "ethers";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -218,6 +218,41 @@ function parseOptionalWei(name: string, raw: string | undefined): bigint | null 
   return parseWeiEnv(name, 1n);
 }
 
+/**
+ * Optional address setting. An empty value is null rather than a placeholder,
+ * because a plausible-looking wrong address is worse than an honest gap —
+ * nothing in the ERC-7715 path should send anyone to a contract that was
+ * never deployed.
+ */
+function parseOptionalAddress(
+  name: string,
+  raw: string | undefined,
+): `0x${string}` | null {
+  if (raw === undefined || raw.trim() === "") {
+    return null;
+  }
+  try {
+    return getAddress(raw.trim()) as `0x${string}`;
+  } catch {
+    throw new Error(`${name} is not a valid address: ${raw}`);
+  }
+}
+
+/** Optional hex blob setting, validated so a typo fails at boot. */
+function parseOptionalHex(
+  name: string,
+  raw: string | undefined,
+): `0x${string}` | null {
+  if (raw === undefined || raw.trim() === "") {
+    return null;
+  }
+  const value = raw.trim();
+  if (!isHexString(value)) {
+    throw new Error(`${name} must be hex data: ${raw}`);
+  }
+  return value as `0x${string}`;
+}
+
 const networkConfig: NetworkConfig = NETWORKS[parseNetwork(process.env.CHAIN)];
 
 /**
@@ -287,11 +322,43 @@ export const config = {
     process.env.WITHDRAWAL_MAX_PER_WINDOW_WEI,
   ),
   withdrawalWindowSeconds: Number(process.env.WITHDRAWAL_WINDOW_SECONDS ?? "86400"),
+  /**
+   * ERC-7710 delegation manager that permission redemption goes through.
+   * Null until configured: the spec response reports it as null with a warning
+   * rather than inventing an address.
+   */
+  permissionsDelegationManager: parseOptionalAddress(
+    "PERMISSIONS_DELEGATION_MANAGER",
+    process.env.PERMISSIONS_DELEGATION_MANAGER,
+  ),
+  /** Factory for accounts that must exist before a permission can be redeemed. */
+  permissionsAccountFactory: parseOptionalAddress(
+    "PERMISSIONS_ACCOUNT_FACTORY",
+    process.env.PERMISSIONS_ACCOUNT_FACTORY,
+  ),
+  /** Calldata for that factory, required whenever the factory is set. */
+  permissionsAccountFactoryData: parseOptionalHex(
+    "PERMISSIONS_ACCOUNT_FACTORY_DATA",
+    process.env.PERMISSIONS_ACCOUNT_FACTORY_DATA,
+  ),
   minWalletCount: MIN_WALLET_COUNT,
   maxWalletCount: MAX_WALLET_COUNT,
 };
 
 // Derived flags and cross-checks that need the assembled config.
+
+// ERC-7715: an entry in `dependencies` is only meaningful with both halves.
+// Half a pair would send a redeemer to deploy an account with no calldata.
+if (
+  (config.permissionsAccountFactory === null) !==
+  (config.permissionsAccountFactoryData === null)
+) {
+  throw new Error(
+    "PERMISSIONS_ACCOUNT_FACTORY and PERMISSIONS_ACCOUNT_FACTORY_DATA must be " +
+      "set together, or neither: an ERC-4337 dependency needs both a factory " +
+      "and the calldata to call it with.",
+  );
+}
 
 if (!config.isTestnet && config.apiTokens.size === 0) {
   throw new Error(

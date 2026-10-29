@@ -547,6 +547,77 @@ itself. The payloads, hashing and `permissionsContext` are otherwise faithful to
 the spec, so the grant can be handed to a wallet that speaks ERC-7715 (for
 example the Rapidfire ID sample wallet) unchanged.
 
+### The current spec shape
+
+ERC-7715 has moved on since `wallet_grantPermissions` was written, and the two
+differ in ways that change what a request means:
+
+| Openfort shape (still supported) | Current ERC-7715 |
+|---|---|
+| `wallet_grantPermissions` | `wallet_requestExecutionPermissions` |
+| `expiry` as a duration | `rules: [{type:"expiry", data:{timestamp}}]` |
+| `policies: [{type,data}]` | `rules: [{type,data}]` |
+| — | `permission.isAdjustmentAllowed` |
+| `permissionsContext` | `context` |
+| `factory` / `factoryData` | `dependencies: [{factory,factoryData}]` |
+| — | `delegationManager` |
+
+Rather than run two engines that can drift apart, the spec shape is translated
+onto the same grant engine, so there is one enforcement path and two wire
+formats:
+
+| Endpoint | Method |
+|---|---|
+| `GET /permissions/supported` | `wallet_getSupportedExecutionPermissions` |
+| `POST /permissions/request` | `wallet_requestExecutionPermissions` |
+| `POST /permissions/redeem-delegation` | builds the ERC-7710 `redeemDelegation` call |
+
+```bash
+curl -X POST localhost:3000/permissions/request -H 'content-type: application/json' -d '{
+  "fromWalletIndex": 0,
+  "request": {
+    "chainId": "0xaa36a7",
+    "to": "0x016562aA41A8697720ce0943F003141f5dEAe006",
+    "permission": {
+      "type": "native-token-allowance",
+      "isAdjustmentAllowed": false,
+      "data": { "allowance": "0x0DE0B6B3A7640000" }
+    },
+    "rules": [{ "type": "expiry", "data": { "timestamp": 1735689600 } }]
+  }
+}'
+```
+
+An allowance is translated into a `spending-cap` policy, because that is what
+the enforcement path already checks and both mean "no more than this, in total".
+
+Three things are refused rather than guessed:
+
+- **A foreign `chainId`.** A permission scoped to another chain is a mistake
+  waiting to be replayed, so it is rejected.
+- **A `from` that is not the granting wallet.** Granting anyway would return a
+  permission naming an account that never consented.
+- **An absent `delegationManager`.** The response reports it as null with a
+  warning instead of inventing an address to send a redeemer to.
+
+| Variable | Purpose |
+|---|---|
+| `PERMISSIONS_DELEGATION_MANAGER` | The ERC-7710 manager redemption goes through |
+| `PERMISSIONS_ACCOUNT_FACTORY` | Factory for accounts that must be deployed first |
+| `PERMISSIONS_ACCOUNT_FACTORY_DATA` | Calldata for that factory — required whenever the factory is set |
+
+Redemption encodes each action as the spec's `Execution` struct:
+
+```
+encodePacked(["address", "uint256", "bytes"], [target, value, callData])
+```
+
+and calls `redeemDelegation(bytes[] contexts, bytes32[] modes, bytes[] executions)`.
+Calldata only — nothing is broadcast. One wrinkle worth knowing: the ERC's
+interface block says `redeemDelegation` while its own pseudocode says
+`redeemDelegations`, and real deployments differ, so both are supported and the
+caller picks the one its manager uses.
+
 ### Encoding
 
 Every field is hashed with a fixed layout so both sides can recompute it:
