@@ -145,6 +145,37 @@ npm run wallet:derive -- 0             # the address to send tokens to
 
 ---
 
+## Withdrawing with a browser wallet (EIP-6963)
+
+If you control an ABT-holding address in MetaMask or another wallet, this
+project ships a page that connects to it and lets **you** sign. The key never
+leaves your wallet and is never sent here.
+
+```
+GET /withdraw
+```
+
+Run the server and open it. It discovers installed wallets with **EIP-6963**,
+then:
+
+1. connects and shows the account,
+2. checks you are on the contract's chain (1) and offers to switch,
+3. reads your ABT balance through your wallet's own RPC,
+4. shows the exact `to` / `data` / `value` / `chain` before you approve,
+5. sends it with `eth_sendTransaction`.
+
+The page does no ABI arithmetic of its own — it asks this server for the
+calldata (`POST /withdraw/calldata`), so the encoding is the same typed, tested
+code the CLI uses rather than an untested `padStart` in a browser.
+
+Two deliberate limits: **no "max" button** — you name the amount, nothing is
+swept — and **no gas tricks**; your wallet estimates gas and you pay it from
+the same account.
+
+The page and its calldata endpoint are served before authentication, because a
+browser has no API token and both are side-effect-free. `POST /assets/unwrap`,
+which can actually move value, stays behind auth.
+
 ## Withdrawing from a specific holder
 
 `withdraw(uint256)` burns the **caller's own** balance. Nobody can redeem

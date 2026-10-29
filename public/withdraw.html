@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Withdraw ABT — sign with your own wallet</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #30363d;
+        --text: #e6edf3;
+        --dim: #8b949e;
+        --accent: #2f81f7;
+        --warn: #d29922;
+        --bad: #f85149;
+        --good: #3fb950;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: var(--dim); margin: 0 0 20px; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 14px;
+      }
+      .panel h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        margin: 0 0 12px;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      button.secondary { background: #21262d; border: 1px solid var(--line); }
+      .wallet {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        margin-bottom: 8px;
+      }
+      .wallet img { width: 28px; height: 28px; border-radius: 4px; }
+      .wallet .name { flex: 1; }
+      .wallet .rdns { color: var(--dim); font-size: 12px; }
+      input {
+        background: #0d1117;
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font: inherit;
+        width: 100%;
+      }
+      label { display: block; color: var(--dim); margin: 12px 0 6px; font-size: 12px; }
+      .row { display: flex; gap: 8px; }
+      .row > * { flex: 1; }
+      .note {
+        color: var(--dim);
+        font-size: 12px;
+        border-left: 2px solid var(--line);
+        padding-left: 10px;
+        margin-top: 12px;
+      }
+      .warn { color: var(--warn); }
+      .bad { color: var(--bad); }
+      .good { color: var(--good); }
+      code { word-break: break-all; color: var(--dim); }
+      .empty { color: var(--dim); }
+      ul { margin: 0; padding-left: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Withdraw ABT</h1>
+      <p class="sub">
+        Burn ABT 1:1 and receive ETH, by signing <code>withdraw(uint256)</code>
+        with a wallet <em>you</em> control.
+      </p>
+
+      <div class="panel">
+        <h2>1 · Wallet</h2>
+        <div id="wallets" class="empty">Looking for injected wallets…</div>
+        <div class="note">
+          Discovered with EIP-6963. This page never asks for a seed phrase or a
+          private key, and never sees either. It only asks your wallet to sign a
+          transaction you can read before you approve it.
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>2 · Account</h2>
+        <div id="account" class="empty">Not connected.</div>
+        <div id="chain" class="note"></div>
+      </div>
+
+      <div class="panel">
+        <h2>3 · Amount</h2>
+        <label for="amount">ABT to redeem (explicit amount — nothing is swept)</label>
+        <input id="amount" type="text" inputmode="decimal" placeholder="0.0" autocomplete="off" />
+        <div id="balance" class="note">Connect a wallet to see its balance.</div>
+      </div>
+
+      <div class="panel">
+        <h2>4 · Transaction</h2>
+        <div id="preview" class="empty">Enter an amount.</div>
+        <div class="row" style="margin-top: 14px">
+          <button id="send" disabled>Sign withdrawal</button>
+          <button id="reset" class="secondary" disabled>Start over</button>
+        </div>
+        <div id="result" class="note"></div>
+      </div>
+
+      <div class="panel">
+        <h2>What this does and does not do</h2>
+        <ul class="note">
+          <li>Calls <code>withdraw(uint256)</code>, which burns the connected account's own balance.</li>
+          <li>Sends no value with the transaction — the contract sends ETH back to you.</li>
+          <li>Gas comes from the connected account and is estimated by your wallet.</li>
+          <li>Nobody can redeem another address's ABT. If the connected account holds none, this will revert.</li>
+        </ul>
+      </div>
+    </div>
+
+    <script type="module">
+      // ---- EIP-6963 discovery -------------------------------------------
+      // Mirror of the wallet side: ask, then listen for announcements.
+      const providers = new Map(); // uuid -> { info, provider }
+
+      function onAnnouncement(event) {
+        const detail = event && event.detail;
+        if (!detail || !detail.info || !detail.provider) return;
+        providers.set(detail.info.uuid, {
+          info: detail.info,
+          provider: detail.provider,
+        });
+        renderWallets();
+      }
+
+      window.addEventListener("eip6963:announceProvider", onAnnouncement);
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+      // ---- state ---------------------------------------------------------
+      let provider = null;
+      let account = null;
+      let meta = null; // { contract, chainId, symbol, decimals }
+      let balance = null;
+
+      const el = (id) => document.getElementById(id);
+
+      function renderWallets() {
+        const host = el("wallets");
+        host.textContent = "";
+        host.className = "";
+
+        if (providers.size === 0) {
+          host.className = "empty";
+          host.textContent =
+            "No EIP-6963 wallet found. Install MetaMask (or another EIP-6963 wallet) and reload.";
+          return;
+        }
+
+        for (const { info, provider: p } of providers.values()) {
+          const row = document.createElement("div");
+          row.className = "wallet";
+
+          if (info.icon) {
+            const img = document.createElement("img");
+            img.src = info.icon;
+            img.alt = "";
+            row.appendChild(img);
+          }
+
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = info.name || info.rdns || "Wallet";
+          const rdns = document.createElement("div");
+          rdns.className = "rdns";
+          rdns.textContent = info.rdns || "";
+          name.appendChild(rdns);
+          row.appendChild(name);
+
+          const button = document.createElement("button");
+          button.textContent = "Connect";
+          button.addEventListener("click", () => connect(p));
+          row.appendChild(button);
+
+          host.appendChild(row);
+        }
+      }
+
+      async function connect(p) {
+        clearResult();
+        try {
+          const accounts = await p.request({ method: "eth_requestAccounts" });
+          if (!accounts || accounts.length === 0) {
+            throw new Error("Wallet returned no accounts.");
+          }
+          provider = p;
+          account = accounts[0];
+          await refresh();
+        } catch (error) {
+          showResult(error.shortMessage || error.message || String(error), "bad");
+        }
+      }
+
+      async function refresh() {
+        if (!provider || !account) return;
+
+        el("account").className = "";
+        el("account").textContent = account;
+
+        const chainIdHex = await provider.request({ method: "eth_chainId" });
+        const chainId = Number(chainIdHex);
+
+        if (meta && chainId !== meta.chainId) {
+          el("chain").innerHTML = "";
+          el("chain").className = "note warn";
+          el("chain").appendChild(
+            document.createTextNode(
+              `Connected to chain ${chainId}, but this contract is on ${meta.chainId}. `,
+            ),
+          );
+          const button = document.createElement("button");
+          button.className = "secondary";
+          button.textContent = "Switch chain";
+          button.addEventListener("click", () => switchChain(meta.chainId));
+          el("chain").appendChild(button);
+        } else {
+          el("chain").className = "note good";
+          el("chain").textContent = `Chain ${chainId} — correct.`;
+        }
+
+        await readBalance(chainId === meta.chainId);
+        renderPreview();
+      }
+
+      async function switchChain(chainId) {
+        try {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x" + chainId.toString(16) }],
+          });
+          await refresh();
+        } catch (error) {
+          showResult(error.shortMessage || error.message || String(error), "bad");
+        }
+      }
+
+      async function readBalance(onCorrectChain) {
+        const balanceEl = el("balance");
+        if (!onCorrectChain) {
+          balance = null;
+          balanceEl.className = "note warn";
+          balanceEl.textContent = "Wrong chain — balance not read.";
+          return;
+        }
+        try {
+          const response = await fetch("/withdraw/calldata", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "balanceOf", address: account }),
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || response.statusText);
+
+          const result = await provider.request({
+            method: "eth_call",
+            params: [{ to: body.to, data: body.data }, "latest"],
+          });
+
+          balance = BigInt(result);
+          balanceEl.className = "note";
+          balanceEl.textContent =
+            `Balance: ${formatUnits(balance, meta.decimals)} ${meta.symbol}. ` +
+            `The account also needs ETH for gas.`;
+        } catch (error) {
+          balance = null;
+          balanceEl.className = "note bad";
+          balanceEl.textContent =
+            "Could not read balance: " +
+            (error.shortMessage || error.message || String(error));
+        }
+      }
+
+      async function renderPreview() {
+        const preview = el("preview");
+        const send = el("send");
+        preview.className = "empty";
+        preview.textContent = "Enter an amount.";
+        send.disabled = true;
+        el("reset").disabled = false;
+
+        const raw = el("amount").value.trim();
+        if (!raw || !/^\d*\.?\d*$/.test(raw) || Number(raw) <= 0) return;
+
+        let amountWei;
+        try {
+          amountWei = parseUnits(raw, meta.decimals);
+        } catch {
+          preview.className = "note bad";
+          preview.textContent = "That is not a valid amount.";
+          return;
+        }
+
+        const response = await fetch("/withdraw/calldata", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "withdraw", amountWei: amountWei.toString() }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          preview.className = "note bad";
+          preview.textContent = body.error || response.statusText;
+          return;
+        }
+
+        preview.className = "";
+        preview.textContent = "";
+        const lines = [
+          `to:    ${body.to}`,
+          `data:  ${body.data}`,
+          `value: ${body.value}  (withdraw is not payable)`,
+          `chain: ${body.chainId}`,
+        ];
+        if (balance !== null && amountWei > balance) {
+          const warning = document.createElement("div");
+          warning.className = "bad";
+          warning.textContent =
+            `This exceeds the balance of ${formatUnits(balance, meta.decimals)} ${meta.symbol}. ` +
+            `The transaction will revert.`;
+          preview.appendChild(warning);
+        }
+        for (const line of lines) {
+          const div = document.createElement("code");
+          div.textContent = line;
+          preview.appendChild(div);
+          preview.appendChild(document.createElement("br"));
+        }
+
+        send.disabled = false;
+        send.dataset.calldata = JSON.stringify(body);
+      }
+
+      el("send").addEventListener("click", async () => {
+        const body = JSON.parse(el("send").dataset.calldata || "null");
+        if (!body) return;
+        clearResult();
+        try {
+          const txHash = await provider.request({
+            method: "eth_sendTransaction",
+            params: [
+              { from: account, to: body.to, data: body.data, value: "0x0" },
+            ],
+          });
+          el("result").className = "note good";
+          el("result").textContent = "";
+          el("result").appendChild(document.createTextNode("Sent: "));
+          const link = document.createElement("a");
+          link.href = `https://etherscan.io/tx/${txHash}`;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = txHash;
+          el("result").appendChild(link);
+        } catch (error) {
+          showResult(error.shortMessage || error.message || String(error), "bad");
+        }
+      });
+
+      el("reset").addEventListener("click", () => {
+        provider = null;
+        account = null;
+        balance = null;
+        el("account").className = "empty";
+        el("account").textContent = "Not connected.";
+        el("chain").textContent = "";
+        el("balance").className = "note";
+        el("balance").textContent = "Connect a wallet to see its balance.";
+        el("amount").value = "";
+        el("send").disabled = true;
+        el("reset").disabled = true;
+        clearResult();
+        renderPreview();
+      });
+
+      el("amount").addEventListener("input", renderPreview);
+
+      function showResult(message, kind) {
+        const host = el("result");
+        host.className = "note " + kind;
+        host.textContent = message;
+      }
+      function clearResult() {
+        el("result").className = "note";
+        el("result").textContent = "";
+      }
+
+      // Minimal unit maths. 18 decimals, integer-only, no float drift.
+      function parseUnits(value, decimals) {
+        const [whole, fraction = ""] = String(value).split(".");
+        const padded = fraction.padEnd(decimals, "0").slice(0, decimals);
+        return BigInt((whole || "0") + padded);
+      }
+      function formatUnits(value, decimals) {
+        const negative = value < 0n;
+        const abs = negative ? -value : value;
+        const base = 10n ** BigInt(decimals);
+        const whole = abs / base;
+        const fraction = (abs % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+        return (negative ? "-" : "") + whole.toString() + (fraction ? "." + fraction : "");
+      }
+
+      // ---- boot ----------------------------------------------------------
+      async function boot() {
+        try {
+          const response = await fetch("/withdraw/config");
+          meta = await response.json();
+        } catch (error) {
+          showResult("Could not load contract configuration.", "bad");
+          return;
+        }
+        renderWallets();
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

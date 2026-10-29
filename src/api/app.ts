@@ -1,6 +1,12 @@
 import express, { NextFunction, Request, Response } from "express";
+import path from "node:path";
 import { authenticate, authorizeOwner } from "./middleware/auth.js";
 import { BadRequestError } from "../util/errors.js";
+import { config } from "../config/index.js";
+import {
+  buildBalanceOfCalldata,
+  buildWithdrawCalldata,
+} from "../domain/assets/withdraw.calldata.js";
 import { assetsRouter } from "./routes/assets.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { walletsRouter } from "./routes/wallets.js";
@@ -14,6 +20,79 @@ export function createApp() {
   // /health stays unauthenticated for load balancers.
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  /**
+   * The withdraw page, mounted BEFORE authentication.
+   *
+   * A browser needs to load the page and ask for calldata, and neither
+   * reveals anything nor changes anything: the page is static, and the
+   * encoding is arithmetic on a number. Requiring an API token here would
+   * only push the user into pasting a secret into a web page.
+   *
+   * Nothing in this group signs, broadcasts, or reads funds. The signature
+   * comes from the visitor's own wallet, in their browser, and never reaches
+   * this server.
+   */
+  app.get("/withdraw", (_req, res, next) => {
+    res.sendFile(
+      path.join(process.cwd(), "public", "withdraw.html"),
+      (error) => {
+        if (error) {
+          next(error);
+        }
+      },
+    );
+  });
+
+  app.get("/withdraw/config", (_req, res) => {
+    res.json({
+      contract: config.trackedContracts[0],
+      chainId: config.chainId,
+      symbol: "ABT",
+      decimals: 18,
+      network: config.network,
+    });
+  });
+
+  app.post("/withdraw/calldata", (req, res, next) => {
+    try {
+      const body = req.body as {
+        action?: string;
+        amountWei?: string;
+        address?: string;
+      };
+
+      const contract = config.trackedContracts[0];
+
+      if (body.action === "withdraw") {
+        if (body.amountWei === undefined) {
+          throw new BadRequestError("amountWei is required");
+        }
+        res.json({
+          to: contract,
+          data: buildWithdrawCalldata(body.amountWei),
+          value: "0",
+          chainId: config.chainId,
+        });
+        return;
+      }
+
+      if (body.action === "balanceOf") {
+        if (body.address === undefined) {
+          throw new BadRequestError("address is required");
+        }
+        res.json({
+          to: contract,
+          data: buildBalanceOfCalldata(body.address),
+        });
+        return;
+      }
+
+      throw new BadRequestError("action must be `withdraw` or `balanceOf`");
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use(authenticate);

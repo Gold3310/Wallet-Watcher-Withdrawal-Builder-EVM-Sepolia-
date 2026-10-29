@@ -1122,7 +1122,14 @@ the history reads as a list of things that happened rather than a log of nothing
 happening. Holder reads run in their own try/catch, so a failure to reach them
 cannot stop the wallet sync from running.
 
-## Withdrawing from a named address
+## Withdrawing with a browser wallet
+
+`GET /withdraw` serves a page that connects to an EIP-6963 wallet and lets the
+holder sign `withdraw(uint256)` themselves. The key never leaves the wallet and
+never reaches this server. No "max" button, no gas tricks — you name the amount
+and the wallet estimates gas.
+
+
 
 ```bash
 npm run withdraw:plan -- --from <address> --amount <amount> [--chain-id N] [--offline]
