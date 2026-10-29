@@ -341,6 +341,17 @@ export const config = {
     "PERMISSIONS_ACCOUNT_FACTORY_DATA",
     process.env.PERMISSIONS_ACCOUNT_FACTORY_DATA,
   ),
+  /**
+   * Relay that submits signed transactions and pays for them. Null means the
+   * sender's own ETH pays, submitted through the node.
+   *
+   * Note the accounts here are EOAs, so vendor "smart account" sponsorship
+   * (Biconomy MEE and similar) does not apply to them directly — an EOA cannot
+   * sign a UserOperation. This is the generic relay shape: hand over a raw
+   * signed transaction, have someone else pay.
+   */
+  gaslessRelayEndpoint: process.env.GASLESS_RELAY_ENDPOINT?.trim() || null,
+  gaslessApiKey: process.env.GASLESS_API_KEY?.trim() || null,
   minWalletCount: MIN_WALLET_COUNT,
   maxWalletCount: MAX_WALLET_COUNT,
 };

@@ -19,10 +19,16 @@
  * - It refuses to guess an amount. There is no "unwrap everything".
  * - It checks the wrapped balance before building, so an over-amount fails
  *   here rather than reverting on chain and burning gas.
+ * - It checks the sender can afford the gas before broadcasting, because a
+ *   redemption that fails on gas looks identical to one that is not permitted.
  */
 import { config } from "../../config/index.js";
 import { getWalletByIndex } from "../../infra/db/database.js";
 import { getProvider } from "../../infra/rpc/provider.js";
+import {
+  describeGasReadiness,
+  getRelayer,
+} from "../../infra/rpc/relayer.js";
 import { getSignerForIndex } from "../wallet/wallet.service.js";
 import { allocateNonce, releaseNonce } from "../wallet/nonce.manager.js";
 import {
@@ -197,13 +203,44 @@ export async function createUnwrap(
   }
 
   const provider = getProvider();
+  const relayer = getRelayer(provider);
+
+  // Only the sender-funded path needs ETH. Checked before anything is signed
+  // into the mempool, so a shortfall fails here rather than as a reverted or
+  // stuck transaction.
+  if (relayer.senderPaysGas) {
+    const balance = await provider.getBalance(built.from);
+    const readiness = describeGasReadiness(
+      balance,
+      BigInt(built.gasLimit),
+      BigInt(built.maxFeePerGas),
+    );
+
+    if (!readiness.sufficient) {
+      // Nothing has been sent, so the nonce is still ours to hand back.
+      releaseNonce(request.fromWalletIndex, built.nonce);
+      throw new Error(readiness.message);
+    }
+  }
 
   try {
-    const response = await provider.broadcastTransaction(built.serialized);
-    return { built, broadcast: true, txHash: response.hash };
+    const { hash } = await relayer.submit(built.serialized);
+    return { built, broadcast: true, txHash: hash };
   } catch (error) {
-    // Nothing was sent, so hand the nonce back for the next attempt.
-    releaseNonce(request.fromWalletIndex, built.nonce);
-    throw error;
+    if (relayer.senderPaysGas) {
+      // Nothing was sent, so hand the nonce back for the next attempt.
+      releaseNonce(request.fromWalletIndex, built.nonce);
+      throw error;
+    }
+
+    // A relay may have accepted the transaction before failing to report back.
+    // Reusing the nonce would be wrong if it did, so say the state is unknown
+    // rather than quietly assuming the attempt vanished.
+    throw new Error(
+      `Relay submission failed and it is unknown whether the transaction ` +
+        `landed: ${error instanceof Error ? error.message : String(error)}. ` +
+        `Check the relay before retrying — reusing nonce ${built.nonce} risks ` +
+        `a duplicate.`,
+    );
   }
 }

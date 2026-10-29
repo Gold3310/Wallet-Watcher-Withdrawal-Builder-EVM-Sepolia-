@@ -14,7 +14,8 @@
     "wallet:derive": "tsx scripts/derive-wallet.ts",
     "token:compile": "tsx scripts/compile-token.ts",
     "token:deploy": "tsx scripts/deploy-token.ts",
-    "token:mint": "tsx scripts/mint-token.ts"
+    "token:mint": "tsx scripts/mint-token.ts",
+    "addresses:confirm": "tsx scripts/confirm-addresses.ts"
   },
   "author": "Mumtaz503",
   "license": "ISC",
