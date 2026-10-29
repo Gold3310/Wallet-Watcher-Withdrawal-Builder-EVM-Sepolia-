@@ -1046,6 +1046,10 @@ npm run addresses:confirm
 prints the whole table live: every address, its balance, its share of supply,
 its ETH, what is blocking it, and whether this service can sign for it.
 
+It seeds the derived wallets itself, so it works on a fresh install without
+booting the server first — a report that silently omitted every address you
+control would be worse than no report at all.
+
 ### Submitting through a relay
 
 Two implementations behind one interface, chosen by configuration:

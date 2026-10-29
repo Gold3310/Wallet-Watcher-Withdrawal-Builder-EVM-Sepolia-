@@ -1,6 +1,7 @@
 import { formatEther, parseUnits } from "ethers";
 import { describe, expect, it, vi } from "vitest";
 import { trackedContractInterface } from "../src/domain/assets/abi.js";
+import { withConfig } from "./helpers/withConfig.js";
 import {
   buildHolderReport,
   HolderOfInterest,
@@ -287,5 +288,91 @@ describe("readHolderReport against a provider", () => {
     expect(result.ethReserveFormatted).toBe(formatEther(RESERVE).toString());
     expect(result.holders[3].redeemableEth).toBe("5.0");
     expect(result.verdict).toMatch(/can turn into ETH right now/);
+  });
+});
+
+const LIST_ENV: Record<string, string | undefined> = {
+  CHAIN: undefined,
+  MAINNET_ENABLED: undefined,
+  WALLET_MNEMONIC:
+    "test test test test test test test test test test test junk",
+  WALLET_COUNT: "3",
+  SEPOLIA_RPC_URL: "https://sepolia.example",
+  DATABASE_PATH: ":memory:",
+  API_TOKENS: undefined,
+  OWNER_ADDRESS: undefined,
+  TRACKED_CONTRACT: CONTRACT,
+  TRACKED_TOKENS: undefined,
+};
+
+/**
+ * Loaded inside `withConfig` on purpose: the module graph holds a reference to
+ * the database handle, and `vi.resetModules()` in the helper means static
+ * imports would bind to a connection that has been torn down.
+ */
+async function load() {
+  const [assets, balance, db] = await Promise.all([
+    import("../src/domain/assets/asset.service.js"),
+    import("../src/domain/balance/balance.service.js"),
+    import("../src/infra/db/database.js"),
+  ]);
+  return {
+    holdersOfInterest: assets.holdersOfInterest,
+    initializeWallets: balance.initializeWallets,
+    resetDatabase: db.resetDatabase,
+  };
+}
+
+describe("the address list is complete", () => {
+  it("includes derived wallets on a database that was never started", async () => {
+    // Regression: the report reads wallets straight from the database, and on
+    // a fresh install that table is empty — so every address you control would
+    // be missing from a report whose whole purpose is telling you which
+    // addresses matter. Seeding has to happen before the read.
+    await withConfig(LIST_ENV, async () => {
+      const { holdersOfInterest, initializeWallets, resetDatabase } = await load();
+
+      resetDatabase();
+      const wallets = initializeWallets();
+
+      expect(wallets.length).toBe(3);
+
+      const holders = holdersOfInterest()[0];
+      expect(holders).toBeDefined();
+
+      const listed = new Set(holders.map((h) => h.address.toLowerCase()));
+      for (const wallet of wallets) {
+        expect(listed.has(wallet.address.toLowerCase())).toBe(true);
+      }
+    });
+  });
+
+  it("marks derived wallets as signable and everyone else as not", async () => {
+    await withConfig(LIST_ENV, async () => {
+      const { holdersOfInterest, initializeWallets, resetDatabase } = await load();
+
+      resetDatabase();
+      const signable = new Set(
+        initializeWallets().map((w) => w.address.toLowerCase()),
+      );
+
+      for (const holder of holdersOfInterest()[0]) {
+        expect(holder.signableByService).toBe(
+          signable.has(holder.address.toLowerCase()),
+        );
+      }
+    });
+  });
+
+  it("is idempotent, so seeding twice changes nothing", async () => {
+    await withConfig(LIST_ENV, async () => {
+      const { initializeWallets, resetDatabase } = await load();
+
+      resetDatabase();
+      const first = initializeWallets().map((w) => w.address);
+      const second = initializeWallets().map((w) => w.address);
+
+      expect(second).toEqual(first);
+    });
   });
 });
