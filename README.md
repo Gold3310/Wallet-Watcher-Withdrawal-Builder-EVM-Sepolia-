@@ -1122,6 +1122,25 @@ the history reads as a list of things that happened rather than a log of nothing
 happening. Holder reads run in their own try/catch, so a failure to reach them
 cannot stop the wallet sync from running.
 
+## Withdrawals
+
+Withdrawals are catalogued in **[WITHDRAWALS.md](WITHDRAWALS.md)** — every
+function that moves value, its selector, what it needs, and the exact
+invocation, plus the reasons the administrative ones are out of reach.
+
+Print the same thing without a server or a network:
+
+```bash
+npm run withdrawals
+npm run withdrawals -- --id contract:withdraw
+```
+
+or read it over HTTP at `GET /assets/withdrawals`.
+
+The catalogue is built from the contract's ABI rather than written by hand, so
+it cannot drift from what is deployed — and anything in the ABI it does not
+recognise is listed as `unclassified` rather than quietly omitted.
+
 ## Can you become the owner, and would it help?
 
 Two separate questions, because they fail for unrelated reasons.

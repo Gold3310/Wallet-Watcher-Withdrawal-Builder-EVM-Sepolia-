@@ -9,6 +9,10 @@ import {
   totalsOf,
 } from "../../domain/assets/asset.service.js";
 import {
+  buildWithdrawalCatalog,
+  findWithdrawalCapability,
+} from "../../domain/assets/withdrawals.catalog.js";
+import {
   createUnwrap,
   UnwrapRequest,
 } from "../../domain/assets/unwrap.service.js";
@@ -164,6 +168,49 @@ assetsRouter.get(
         chainId: config.chainId,
         analyses: await getOwnershipAnalyses(),
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /assets/withdrawals
+ *
+ * Every way value can move out of this system, in one response: the contract's
+ * own functions, this service's routes, and the CLI — each with what it needs,
+ * whether it can run here, and precisely why not when it cannot.
+ *
+ * Built from the ABI, so it cannot drift from the deployed contract. Anything
+ * in the ABI that is not classified is still listed as `unclassified`, because
+ * showing you something unexpected is better than hiding it.
+ *
+ * GET /assets/withdrawals/:id returns a single capability.
+ */
+assetsRouter.get(
+  "/withdrawals",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json(buildWithdrawalCatalog());
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+assetsRouter.get(
+  "/withdrawals/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const capability = findWithdrawalCapability(id);
+      if (capability === undefined) {
+        res
+          .status(404)
+          .json({ error: `No withdrawal capability with id "${id}"` });
+        return;
+      }
+      res.json(capability);
     } catch (error) {
       next(error);
     }
