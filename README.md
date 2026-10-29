@@ -945,6 +945,7 @@ reports:
 - `unaccountedFor`: supply held outside the listed addresses. When that is the
   whole supply, none of these addresses holds the token
 - a plain `verdict` reading the numbers, so nothing has to be inferred
+- each address's ETH for gas, and an `accessStatus` classification (below)
 
 ### Who holds it, read on 2026-10-28
 
@@ -1025,6 +1026,85 @@ One trap worth knowing: `token:mint` points at any WETH-style contract, and
 also circular — you get back exactly the ETH you lock, and no claim on the
 reserve already sitting there. The script says so when you aim it at the tracked
 address.
+
+### What gasless actually fixes
+
+Paying for someone's gas tends to be proposed as though it were the last barrier
+in general. It is the last barrier in exactly one situation, so every address is
+classified:
+
+| Status | Meaning | Does gasless help? |
+|---|---|---|
+| `nothing-to-redeem` | No balance — there is no claim to exercise | No. There is nothing to move |
+| `gas-blocked` | A balance worth redeeming, no ETH to pay for it | **Yes — this is the case** |
+| `ready` | A balance and the gas to move it | Unnecessary |
+
+```bash
+npm run addresses:confirm
+```
+
+prints the whole table live: every address, its balance, its share of supply,
+its ETH, what is blocking it, and whether this service can sign for it.
+
+It seeds the derived wallets itself, so it works on a fresh install without
+booting the server first — a report that silently omitted every address you
+control would be worse than no report at all.
+
+### Submitting through a relay
+
+Two implementations behind one interface, chosen by configuration:
+
+| `GASLESS_RELAY_ENDPOINT` | Who pays |
+|---|---|
+| unset | The sender's ETH, submitted through the node |
+| set | A relay submits the signed transaction and pays (`GASLESS_API_KEY` required) |
+
+`POST /assets/unwrap` checks the sender can afford the gas before broadcasting
+and reports the shortfall when it cannot, rather than letting the transaction
+revert or stall. It refuses to submit to a relay without a key: an unauthenticated
+relay endpoint is an open relay for anyone who finds it.
+
+**This is not a Biconomy integration.** Biconomy's MEE replaces bundlers and
+paymasters for **smart accounts** — the user signs a message rather than a
+transaction, and the account executes it. Every wallet here is a plain EOA
+derived from the mnemonic, and an EOA cannot sign a UserOperation, so MEE's
+sponsored flow does not apply without first moving to a smart account.
+
+What an EOA *can* do is hand a raw signed transaction to a relay that pays for
+it, which is what `SponsoredRelayer` models. Standing that up needs an API key
+and outbound network access, neither of which this sandbox has, so it ships
+complete, tested against a mock, and unconfigured.
+
+## Watching the addresses that decide it
+
+The balance poller syncs *your* wallets. That is the right thing to do and it
+answers the wrong question here: those wallets hold nothing, so a change in them
+tells you nothing about the balance being watched. The balances that matter
+belong to other people.
+
+So the watcher polls them instead. Every interval it reads the holder set, diffs
+it against the last observation, and records what moved. Nothing here
+transacts — it is a watcher, not a strategy.
+
+| Change | Meaning |
+|---|---|
+| `holder-redeemed` | ABT fell **and** the ETH reserve fell with it — someone burned the token and took the ETH. The supply just got smaller. |
+| `holder-transferred` | ABT fell while the reserve held — it changed hands, nothing was redeemed |
+| `holder-received` | ABT arrived somewhere |
+| `reserve-moved` | The ETH backing moved with no change in balances |
+| **`arrived`** | **ABT landed at an address this service can sign for** |
+
+`arrived` is logged at warning level, because it is the only event that changes
+what is *possible* rather than merely what is true.
+
+```bash
+GET /assets/holder-activity
+```
+
+returns everything recorded, newest first. Unchanged polls are not written, so
+the history reads as a list of things that happened rather than a log of nothing
+happening. Holder reads run in their own try/catch, so a failure to reach them
+cannot stop the wallet sync from running.
 
 ## Evidence and on-chain verification
 

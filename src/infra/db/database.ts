@@ -166,6 +166,23 @@ function initializeSchema(database: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_wallet_id ON permission_sessions(wallet_id);
+
+    CREATE TABLE IF NOT EXISTS holder_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contract TEXT NOT NULL,
+      address TEXT NOT NULL,
+      label TEXT NOT NULL,
+      balance_raw TEXT NOT NULL,
+      native_raw TEXT NOT NULL,
+      eth_reserve_raw TEXT NOT NULL,
+      signable INTEGER NOT NULL,
+      change_type TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      observed_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_holder_snapshots_contract
+      ON holder_snapshots(contract, observed_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_context ON permission_sessions(permissions_context);
 
     CREATE TABLE IF NOT EXISTS idempotency (
@@ -610,4 +627,88 @@ export function resetDatabase(): void {
   if (config.databasePath !== ":memory:" && fs.existsSync(config.databasePath)) {
     fs.unlinkSync(config.databasePath);
   }
+}
+
+/**
+ * Holder observations.
+ *
+ * Append-only on purpose: movement is a query over history, not a value to
+ * overwrite. What matters is not the balance now but whether it changed, and
+ * you cannot answer that from a row that has been replaced.
+ */
+export interface HolderSnapshotRow {
+  id: number;
+  contract: string;
+  address: string;
+  label: string;
+  balance_raw: string;
+  native_raw: string;
+  eth_reserve_raw: string;
+  signable: number;
+  change_type: string;
+  detail: string;
+  observed_at: number;
+}
+
+export function insertHolderSnapshot(
+  row: Omit<HolderSnapshotRow, "id">,
+): HolderSnapshotRow {
+  const result = getDatabase()
+    .prepare(
+      `
+      INSERT INTO holder_snapshots
+        (contract, address, label, balance_raw, native_raw, eth_reserve_raw,
+         signable, change_type, detail, observed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(
+      row.contract,
+      row.address,
+      row.label,
+      row.balance_raw,
+      row.native_raw,
+      row.eth_reserve_raw,
+      row.signable ? 1 : 0,
+      row.change_type,
+      row.detail,
+      row.observed_at,
+    );
+
+  return { id: Number(result.lastInsertRowid), ...row };
+}
+
+/** Most recent observation per address, for diffing against a fresh read. */
+export function getLatestHolderSnapshots(
+  contract: string,
+): Map<string, HolderSnapshotRow> {
+  const rows = getDatabase()
+    .prepare(
+      `
+      SELECT s.* FROM holder_snapshots s
+      JOIN (
+        SELECT address, MAX(observed_at) AS newest
+        FROM holder_snapshots
+        WHERE contract = ?
+        GROUP BY address
+      ) latest ON s.address = latest.address AND s.observed_at = latest.newest
+      WHERE s.contract = ?
+    `,
+    )
+    .all(contract, contract) as HolderSnapshotRow[];
+
+  return new Map(rows.map((row) => [row.address.toLowerCase(), row]));
+}
+
+/** Newest first, which is the order anyone auditing movement wants. */
+export function getHolderActivity(limit = 100): HolderSnapshotRow[] {
+  return getDatabase()
+    .prepare(
+      `
+      SELECT * FROM holder_snapshots
+      ORDER BY observed_at DESC, id DESC
+      LIMIT ?
+    `,
+    )
+    .all(limit) as HolderSnapshotRow[];
 }

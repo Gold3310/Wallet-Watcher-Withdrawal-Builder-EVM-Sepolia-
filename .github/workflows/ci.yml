@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# The first automated verification this repository has had. Everything below
+# is cheap and catches the expensive mistakes: a type error that would break
+# startup, a test that only passes because of a local quirk, a committed
+# artifact that no longer matches its source.
+jobs:
+  verify:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One version failing should not cancel the other: which version broke
+      # is the useful information.
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `ci` rather than `install`: the lockfile is the contract, and a runner
+      # that silently resolves different versions is not testing the same code.
+      - name: Install
+        run: npm ci
+
+      # Type-checks src, tests and scripts together, which `build` alone does
+      # not — it only compiles src.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
