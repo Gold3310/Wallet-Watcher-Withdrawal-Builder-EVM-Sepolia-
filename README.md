@@ -1050,6 +1050,22 @@ It seeds the derived wallets itself, so it works on a fresh install without
 booting the server first — a report that silently omitted every address you
 control would be worse than no report at all.
 
+`--offline` rebuilds the same report from `fixtures/holder-snapshot.json`
+without touching a network:
+
+```bash
+npm run addresses:confirm -- --offline
+```
+
+It runs through the identical code path a live read uses, so it shows what the
+output looks like before pointing at a chain. Every line is labelled as
+recorded data, because a report that looks live and is not invites exactly the
+confident wrong conclusions this project keeps having to walk back.
+
+Unrecorded ETH reads as `?`, never `0`: a gap in a snapshot is not evidence
+that an address has no gas, and reporting it as zero would mark holders
+`gas-blocked` on the strength of data nobody collected.
+
 ### Submitting through a relay
 
 Two implementations behind one interface, chosen by configuration:

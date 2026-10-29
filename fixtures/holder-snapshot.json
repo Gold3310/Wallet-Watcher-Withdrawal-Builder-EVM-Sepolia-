@@ -1,0 +1,18 @@
+{
+  "_comment": "Recorded holder data, NOT a live read. Balances were taken from the Etherscan token-holder list for the tracked contract on 2026-10-28, before the poller existed. Used by `npm run addresses:confirm -- --offline` to exercise and demonstrate the report without a network. Percentages were cross-checked against the 42.591 total supply and agree.",
+  "recordedAt": "2026-10-28",
+  "source": "Etherscan token holder list (paste from user)",
+  "network": "mainnet",
+  "chainId": 1,
+  "contract": "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea",
+  "symbol": "ABT",
+  "decimals": 18,
+  "totalSupply": "42591000000000000000",
+  "ethReserve": "42591000000000000000",
+  "balances": {
+    "0x54f44ea3d2e7aa0ac089c4d8f7c93c27844057bf": "34505000000000000000",
+    "0xf7bac63fc7ceacf0589f25454ecf5c2ce904997c": "7485000000000000000",
+    "0xc186fa914353c44b2e33ebe05f21846f1048beda": "450000000000000000"
+  },
+  "native": {}
+}
