@@ -32,6 +32,8 @@ export interface HolderFixture {
   balances: Record<string, string>;
   /** Lowercase holder address -> raw ETH. Absent entries read as null. */
   native: Record<string, string>;
+  /** The contract owner at the time of recording, if known. */
+  owner?: string;
 }
 
 export function parseFixture(raw: string): HolderFixture {
@@ -54,6 +56,7 @@ export function parseFixture(raw: string): HolderFixture {
     ethReserve: parsed.ethReserve ?? "0",
     balances: parsed.balances ?? {},
     native: parsed.native ?? {},
+    ...(parsed.owner === undefined ? {} : { owner: parsed.owner }),
   };
 }
 
@@ -112,6 +115,13 @@ export function fixtureProvider(fixture: HolderFixture) {
           return enc("symbol", [fixture.symbol]);
         case "totalSupply":
           return enc("totalSupply", [BigInt(fixture.totalSupply)]);
+        case "owner":
+          if (fixture.owner === undefined) {
+            throw new Error(
+              `Fixture records no owner for ${fixture.contract}; unknown, not a guess`,
+            );
+          }
+          return enc("owner", [fixture.owner]);
         default:
           throw new Error(
             `Fixture cannot answer ${fragment?.name ?? "unknown call"}`,

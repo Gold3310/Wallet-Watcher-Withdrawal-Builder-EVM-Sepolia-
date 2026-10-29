@@ -35,7 +35,11 @@ import {
   parseFixture,
 } from "../src/domain/assets/fixture.js";
 import { config } from "../src/config/index.js";
-import { getHolderReports } from "../src/domain/assets/asset.service.js";
+import {
+  getHolderReports,
+  getOwnershipAnalyses,
+} from "../src/domain/assets/asset.service.js";
+import type { OwnershipAnalysis } from "../src/domain/assets/ownership.js";
 import type { HolderReport } from "../src/domain/assets/holders.js";
 import { assertReachable } from "../src/infra/rpc/provider.js";
 
@@ -48,6 +52,27 @@ const flag = (name: string) => process.argv.includes(`--${name}`);
 
 function pad(value: string, width: number): string {
   return value.length >= width ? value : value + " ".repeat(width - value.length);
+}
+
+function printOwnership(analyses: OwnershipAnalysis[]): void {
+  for (const analysis of analyses) {
+    console.log("");
+    console.log(`OWNERSHIP of ${analysis.contract}`);
+    console.log(`  owner:              ${analysis.owner ?? "unreadable"}`);
+    console.log(`  is the deployer:    ${analysis.ownerIsDeployer ?? "?"}`);
+    console.log(`  is service owner:   ${analysis.ownerIsServiceOwner ?? "?"}`);
+    console.log(
+      `  can be changed by us: ${analysis.serviceCanChangeOwner ? "yes" : "no"}`,
+    );
+    console.log(`  owner may call:     ${analysis.ownerGatedFunctions.join(", ") || "nothing identifiable"}`);
+    console.log(
+      `  can move value:     ${analysis.ownerCanMoveValue ? "YES" : "no"}`,
+    );
+    console.log("");
+    console.log(`  ${analysis.changeOwnerReason.replace(/(.{88}\s)/g, "$1  ")}`);
+    console.log("");
+    console.log(analysis.verdict.replace(/(.{92}\s)/g, "$1\n"));
+  }
 }
 
 function printReports(reports: HolderReport[]): void {
@@ -106,7 +131,8 @@ async function offline(): Promise<void> {
   }
 
   const wallets = initializeWallets();
-  const reports = await getHolderReports(fixtureProvider(fixture) as never);
+  const provider = fixtureProvider(fixture) as never;
+  const reports = await getHolderReports(provider);
 
   console.log("OFFLINE — RECORDED DATA, NOT A LIVE READ");
   console.log(`source: ${fixture.source}`);
@@ -118,6 +144,7 @@ async function offline(): Promise<void> {
   console.log("");
 
   printReports(reports);
+  printOwnership(await getOwnershipAnalyses(provider));
 }
 
 async function live(): Promise<void> {
@@ -134,6 +161,7 @@ async function live(): Promise<void> {
   console.log("");
 
   printReports(reports);
+  printOwnership(await getOwnershipAnalyses());
 }
 
 async function main(): Promise<void> {

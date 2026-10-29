@@ -1122,6 +1122,40 @@ the history reads as a list of things that happened rather than a log of nothing
 happening. Holder reads run in their own try/catch, so a failure to reach them
 cannot stop the wallet sync from running.
 
+## Can you become the owner, and would it help?
+
+Two separate questions, because they fail for unrelated reasons.
+
+**Can the role be moved to you?** `transferOwnership` is `onlyOwner`: it must be
+signed by whoever holds the role now. On the tracked contract that is the Risk
+Labs deployer, which is not a wallet this service has keys for. No code path
+produces that signature.
+
+**Would holding it help?** That is a question about the ABI, and it is answered
+from the ABI rather than from memory — `GET /assets/ownership` recomputes it
+every run:
+
+```
+owner:                0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D
+is the deployer:      true
+is service owner:     false
+can be changed by us: no
+owner may call:       renounceOwnership, setProposer, transferOwnership
+can move value:       no
+```
+
+Every owner-gated function is administrative. Nothing the owner can call
+transfers ETH or tokens. The functions that *do* move value — `deposit`,
+`withdraw`, `transfer`, `transferFrom` — are ungated: they answer to whoever
+holds a balance, not to whoever holds the title.
+
+**Being made owner would give you a role, not a claim.**
+
+The gated-function list is an input rather than a constant, for a specific
+reason: hardcoded, this analysis could only ever answer "the owner cannot move
+value", which would make it a rubber stamp rather than a check. Point it at a
+contract where the owner genuinely controls funds and it says so.
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.

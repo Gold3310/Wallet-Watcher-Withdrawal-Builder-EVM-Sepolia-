@@ -20,6 +20,7 @@ import { getProvider } from "../../infra/rpc/provider.js";
 import {
   CONTRACT_CREATOR,
   KNOWN_TOKEN_HOLDERS,
+  TRACKED_CONTRACT_ABI,
   hubPoolInterface,
   trackedContractInterface,
   TRANSFER_RESTRICTION,
@@ -30,6 +31,7 @@ import {
   HolderOfInterest,
   HolderReport,
 } from "./holders.js";
+import { readOwnership, OwnershipAnalysis } from "./ownership.js";
 
 export {
   CONTRACT_CREATOR,
@@ -44,6 +46,8 @@ export {
 } from "./abi.js";
 
 export { readHolderReport } from "./holders.js";
+export { analyseOwnership, readOwnership } from "./ownership.js";
+export type { OwnershipAnalysis } from "./ownership.js";
 export type {
   HolderBalance,
   HolderOfInterest,
@@ -522,6 +526,30 @@ export async function getHolderReports(
   return Promise.all(
     config.trackedContracts.map((contract, i) =>
       readHolderReport(resolved, contract, holderSets[i]),
+    ),
+  );
+}
+
+/**
+ * What the owner role is actually worth on each tracked contract.
+ *
+ * Answered from the ABI rather than from memory, because it is the question
+ * that keeps coming back and a chat answer does not survive the conversation.
+ */
+export async function getOwnershipAnalyses(
+  provider?: CallProvider,
+): Promise<OwnershipAnalysis[]> {
+  const resolved = provider ?? (getProvider() as unknown as CallProvider);
+  const signable = getAllWallets().map((wallet) => wallet.address);
+
+  return Promise.all(
+    config.trackedContracts.map((contract) =>
+      readOwnership(resolved, contract, {
+        abi: TRACKED_CONTRACT_ABI as readonly unknown[],
+        deployer: CONTRACT_CREATOR,
+        serviceOwner: config.ownerAddress ?? null,
+        signableAddresses: signable,
+      }),
     ),
   );
 }

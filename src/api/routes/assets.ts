@@ -3,6 +3,7 @@ import { config } from "../../config/index.js";
 import {
   getAllWalletAssets,
   getHolderReports,
+  getOwnershipAnalyses,
   getTrackedContractInfo,
   getWalletAssetsByIndex,
   totalsOf,
@@ -133,6 +134,35 @@ assetsRouter.get(
           ethReserveRaw: row.eth_reserve_raw,
           signableByService: row.signable === 1,
         })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /assets/ownership
+ *
+ * Can the owner role be moved to you, and would holding it do anything?
+ *
+ * Two questions kept apart on purpose, because they fail for unrelated
+ * reasons: moving the role needs the current owner's signature, and the role's
+ * worth is a property of the ABI. On the tracked contract the answer to the
+ * first is no and the second is nothing — the owner may call setProposer,
+ * transferOwnership and renounceOwnership, and cannot touch a single wei.
+ *
+ * Computed from the ABI each run rather than asserted, so it stays correct if
+ * the contract ever changes.
+ */
+assetsRouter.get(
+  "/ownership",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({
+        network: config.network,
+        chainId: config.chainId,
+        analyses: await getOwnershipAnalyses(),
       });
     } catch (error) {
       next(error);
