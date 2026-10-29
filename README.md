@@ -1075,6 +1075,37 @@ it, which is what `SponsoredRelayer` models. Standing that up needs an API key
 and outbound network access, neither of which this sandbox has, so it ships
 complete, tested against a mock, and unconfigured.
 
+## Watching the addresses that decide it
+
+The balance poller syncs *your* wallets. That is the right thing to do and it
+answers the wrong question here: those wallets hold nothing, so a change in them
+tells you nothing about the balance being watched. The balances that matter
+belong to other people.
+
+So the watcher polls them instead. Every interval it reads the holder set, diffs
+it against the last observation, and records what moved. Nothing here
+transacts — it is a watcher, not a strategy.
+
+| Change | Meaning |
+|---|---|
+| `holder-redeemed` | ABT fell **and** the ETH reserve fell with it — someone burned the token and took the ETH. The supply just got smaller. |
+| `holder-transferred` | ABT fell while the reserve held — it changed hands, nothing was redeemed |
+| `holder-received` | ABT arrived somewhere |
+| `reserve-moved` | The ETH backing moved with no change in balances |
+| **`arrived`** | **ABT landed at an address this service can sign for** |
+
+`arrived` is logged at warning level, because it is the only event that changes
+what is *possible* rather than merely what is true.
+
+```bash
+GET /assets/holder-activity
+```
+
+returns everything recorded, newest first. Unchanged polls are not written, so
+the history reads as a list of things that happened rather than a log of nothing
+happening. Holder reads run in their own try/catch, so a failure to reach them
+cannot stop the wallet sync from running.
+
 ## Evidence and on-chain verification
 
 No event export ships with this repo. What ships is the tooling to check one.

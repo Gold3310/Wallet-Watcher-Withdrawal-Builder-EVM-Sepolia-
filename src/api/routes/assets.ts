@@ -11,6 +11,7 @@ import {
   createUnwrap,
   UnwrapRequest,
 } from "../../domain/assets/unwrap.service.js";
+import { getHolderActivity } from "../../infra/db/database.js";
 import { actorId } from "../middleware/auth.js";
 import {
   abandonIdempotentRequest,
@@ -93,6 +94,45 @@ assetsRouter.get(
         chainId: config.chainId,
         trackedContracts: config.trackedContracts,
         reports: await getHolderReports(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /assets/holder-activity
+ *
+ * Everything the watcher has seen, newest first: which holder moved, whether
+ * they redeemed or transferred, whether the ETH reserve shifted, and whether
+ * the token ever reached an address this service can sign for.
+ *
+ * Unchanged polls are not recorded, so this reads as a list of things that
+ * happened rather than a log of nothing happening.
+ */
+assetsRouter.get(
+  "/holder-activity",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const raw = Number(String(req.query.limit ?? "100"));
+      const limit =
+        Number.isInteger(raw) && raw > 0 && raw <= 1000 ? raw : 100;
+
+      res.json({
+        network: config.network,
+        chainId: config.chainId,
+        activity: getHolderActivity(limit).map((row) => ({
+          observedAt: new Date(row.observed_at * 1000).toISOString(),
+          contract: row.contract,
+          address: row.address,
+          label: row.label,
+          change: row.change_type,
+          detail: row.detail,
+          balanceRaw: row.balance_raw,
+          ethReserveRaw: row.eth_reserve_raw,
+          signableByService: row.signable === 1,
+        })),
       });
     } catch (error) {
       next(error);
