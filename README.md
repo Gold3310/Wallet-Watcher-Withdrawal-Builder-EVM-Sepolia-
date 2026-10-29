@@ -945,6 +945,7 @@ reports:
 - `unaccountedFor`: supply held outside the listed addresses. When that is the
   whole supply, none of these addresses holds the token
 - a plain `verdict` reading the numbers, so nothing has to be inferred
+- each address's ETH for gas, and an `accessStatus` classification (below)
 
 ### Who holds it, read on 2026-10-28
 
@@ -1025,6 +1026,50 @@ One trap worth knowing: `token:mint` points at any WETH-style contract, and
 also circular — you get back exactly the ETH you lock, and no claim on the
 reserve already sitting there. The script says so when you aim it at the tracked
 address.
+
+### What gasless actually fixes
+
+Paying for someone's gas tends to be proposed as though it were the last barrier
+in general. It is the last barrier in exactly one situation, so every address is
+classified:
+
+| Status | Meaning | Does gasless help? |
+|---|---|---|
+| `nothing-to-redeem` | No balance — there is no claim to exercise | No. There is nothing to move |
+| `gas-blocked` | A balance worth redeeming, no ETH to pay for it | **Yes — this is the case** |
+| `ready` | A balance and the gas to move it | Unnecessary |
+
+```bash
+npm run addresses:confirm
+```
+
+prints the whole table live: every address, its balance, its share of supply,
+its ETH, what is blocking it, and whether this service can sign for it.
+
+### Submitting through a relay
+
+Two implementations behind one interface, chosen by configuration:
+
+| `GASLESS_RELAY_ENDPOINT` | Who pays |
+|---|---|
+| unset | The sender's ETH, submitted through the node |
+| set | A relay submits the signed transaction and pays (`GASLESS_API_KEY` required) |
+
+`POST /assets/unwrap` checks the sender can afford the gas before broadcasting
+and reports the shortfall when it cannot, rather than letting the transaction
+revert or stall. It refuses to submit to a relay without a key: an unauthenticated
+relay endpoint is an open relay for anyone who finds it.
+
+**This is not a Biconomy integration.** Biconomy's MEE replaces bundlers and
+paymasters for **smart accounts** — the user signs a message rather than a
+transaction, and the account executes it. Every wallet here is a plain EOA
+derived from the mnemonic, and an EOA cannot sign a UserOperation, so MEE's
+sponsored flow does not apply without first moving to a smart account.
+
+What an EOA *can* do is hand a raw signed transaction to a relay that pays for
+it, which is what `SponsoredRelayer` models. Standing that up needs an API key
+and outbound network access, neither of which this sandbox has, so it ships
+complete, tested against a mock, and unconfigured.
 
 ## Evidence and on-chain verification
 

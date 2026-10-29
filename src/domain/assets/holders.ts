@@ -58,6 +58,23 @@ export interface HolderBalance {
    * Needs a non-zero balance and a reserve at least that large.
    */
   canWithdrawNow: boolean | null;
+  /**
+   * ETH the address holds for gas. A redeemable balance at an address with no
+   * ETH is stranded by gas rather than by entitlement — that is the one case
+   * where paying someone else's gas changes the outcome.
+   */
+  nativeWei: string | null;
+  nativeEth: string | null;
+  /**
+   * What is actually stopping this address from redeeming:
+   *
+   * - `nothing-to-redeem` — no balance. Sponsoring gas changes nothing; there
+   *   is no claim to exercise.
+   * - `gas-blocked` — a balance worth redeeming and no ETH to pay for the
+   *   transaction. This is the only case gasless fixes.
+   * - `ready` — a balance and the gas to move it.
+   */
+  accessStatus: "nothing-to-redeem" | "gas-blocked" | "ready" | "unknown";
   signableByService: boolean;
   error: string | null;
 }
@@ -157,6 +174,30 @@ function percentage(part: bigint, whole: bigint): string | null {
   return `${wholePart}.${fraction}`;
 }
 
+/**
+ * Why an address cannot redeem, in the order that matters.
+ *
+ * Sponsoring gas is often pitched as removing the last barrier. It removes
+ * exactly one barrier: having a claim and no ETH to exercise it. Where there is
+ * no claim, it changes nothing at all — which is the distinction worth stating
+ * explicitly rather than letting "gasless" imply access.
+ */
+export function classifyAccess(
+  balance: bigint,
+  nativeWei: bigint | null,
+  redeemableWei: bigint | null,
+): "nothing-to-redeem" | "gas-blocked" | "ready" | "unknown" {
+  if (balance <= 0n || redeemableWei === null || redeemableWei <= 0n) {
+    return "nothing-to-redeem";
+  }
+
+  if (nativeWei === null) {
+    return "unknown";
+  }
+
+  return nativeWei === 0n ? "gas-blocked" : "ready";
+}
+
 export interface ReadHolderReportDeps {
   contract: string;
   holders: HolderOfInterest[];
@@ -165,6 +206,8 @@ export interface ReadHolderReportDeps {
   totalSupply: bigint | null;
   ethReserve: bigint | null;
   balances: (bigint | null)[];
+  /** ETH each holder has for gas. Optional so the pure path stays readable. */
+  nativeBalances?: (bigint | null)[];
 }
 
 /**
@@ -178,6 +221,7 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
 
   const rows: HolderBalance[] = holders.map((holder, i) => {
     const raw = deps.balances[i];
+    const native = deps.nativeBalances?.[i] ?? null;
 
     if (raw === null) {
       return {
@@ -188,6 +232,9 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
         shareOfSupply: null,
         redeemableEth: null,
         canWithdrawNow: null,
+        nativeWei: null,
+        nativeEth: null,
+        accessStatus: "unknown",
         signableByService: holder.signableByService,
         error: "balanceOf read failed",
       };
@@ -215,6 +262,13 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
         ethReserve === null || redeemableWei === null
           ? null
           : balance > 0n && redeemableWei <= ethReserve,
+      nativeWei: native === null ? null : native.toString(),
+      nativeEth: native === null ? null : formatEther(native),
+      accessStatus: classifyAccess(
+        balance,
+        native,
+        capped ?? redeemableWei,
+      ),
       signableByService: holder.signableByService,
       error: null,
     };
@@ -230,6 +284,9 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
   );
 
   const signable = rows.filter((row) => row.signableByService);
+  const gasBlocked = signable.filter(
+    (row) => row.accessStatus === "gas-blocked",
+  );
   const signableTotal = signable.reduce(
     (sum, row) => (row.balanceRaw === null ? sum : sum + BigInt(row.balanceRaw)),
     0n,
@@ -276,6 +333,7 @@ export function buildHolderReport(deps: ReadHolderReportDeps): HolderReport {
       ethReserve,
       contractOwnBalance: contractRow?.balanceRaw ?? null,
       signableTotal,
+      gasBlockedCount: gasBlocked.length,
       thirdPartyTotal: thirdParty,
     }),
   };
@@ -288,6 +346,7 @@ interface VerdictInput {
   ethReserve: bigint | null;
   contractOwnBalance: string | null;
   signableTotal: bigint;
+  gasBlockedCount: number;
   thirdPartyTotal: bigint | null;
 }
 
@@ -341,6 +400,16 @@ function verdictFor(input: VerdictInput): string {
     );
   }
 
+  if (input.gasBlockedCount > 0) {
+    parts.push(
+      `${input.gasBlockedCount} wallet(s) this service can sign for hold a ` +
+        `redeemable balance but no ETH to pay for the transaction. Sponsoring ` +
+        `gas would unblock exactly those — it is the one situation where ` +
+        `paying someone else's gas changes the outcome, and it changes nothing ` +
+        `for any address that holds no balance at all.`,
+    );
+  }
+
   if (input.signableTotal > 0n) {
     parts.push(
       `Wallets this service can sign for hold ` +
@@ -369,7 +438,7 @@ export async function readHolderReport(
   contract: string,
   holders: HolderOfInterest[],
 ): Promise<HolderReport> {
-  const [decimals, totalSupply, symbol, ethReserve, ...balances] =
+  const [decimals, totalSupply, symbol, ethReserve, ...rest] =
     await Promise.all([
       readUint(provider, contract, "decimals"),
       readUint(provider, contract, "totalSupply"),
@@ -382,7 +451,12 @@ export async function readHolderReport(
       }),
       readOrNull(() => provider.getBalance(contract)),
       ...holders.map((holder) => readBalance(provider, contract, holder.address)),
+      ...holders.map((holder) => readOrNull(() => provider.getBalance(holder.address))),
     ]);
+
+  // `rest` is balances first, then native balances, in the same order.
+  const balances = rest.slice(0, holders.length) as (bigint | null)[];
+  const nativeBalances = rest.slice(holders.length) as (bigint | null)[];
 
   return buildHolderReport({
     contract,
@@ -392,5 +466,6 @@ export async function readHolderReport(
     totalSupply,
     ethReserve,
     balances,
+    nativeBalances,
   });
 }
