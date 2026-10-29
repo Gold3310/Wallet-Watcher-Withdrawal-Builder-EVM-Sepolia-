@@ -17,7 +17,8 @@
     "token:deploy": "tsx scripts/deploy-token.ts",
     "token:mint": "tsx scripts/mint-token.ts",
     "addresses:confirm": "tsx scripts/confirm-addresses.ts",
-    "withdrawals": "tsx scripts/withdrawals.ts"
+    "withdrawals": "tsx scripts/withdrawals.ts",
+    "holders:scan": "tsx scripts/scan-holders.ts"
   },
   "author": "Mumtaz503",
   "license": "ISC",

@@ -18,6 +18,7 @@
  * conclusion this project keeps having to walk back.
  */
 import { trackedContractInterface } from "./abi.js";
+import type { RawLog } from "./holder.scan.js";
 
 export interface HolderFixture {
   /** Where the numbers came from, shown alongside any output. */
@@ -34,6 +35,19 @@ export interface HolderFixture {
   native: Record<string, string>;
   /** The contract owner at the time of recording, if known. */
   owner?: string;
+  /** Block the contract was deployed at, so a scan knows where to start. */
+  deploymentBlock?: number;
+  /**
+   * Reconstructed Transfer/Deposit history standing in for a log scan. A
+   * reconstruction, not an observed log set — labelled wherever rendered.
+   */
+  events?: {
+    type: "Transfer" | "Deposit";
+    src?: string;
+    dst: string;
+    wad: string;
+    block: number;
+  }[];
 }
 
 export function parseFixture(raw: string): HolderFixture {
@@ -57,6 +71,10 @@ export function parseFixture(raw: string): HolderFixture {
     balances: parsed.balances ?? {},
     native: parsed.native ?? {},
     ...(parsed.owner === undefined ? {} : { owner: parsed.owner }),
+    ...(parsed.deploymentBlock === undefined
+      ? {}
+      : { deploymentBlock: parsed.deploymentBlock }),
+    ...(parsed.events === undefined ? {} : { events: parsed.events }),
   };
 }
 
@@ -68,6 +86,8 @@ const enc = (name: string, values: unknown[]) =>
  * returning a plausible zero, so a gap shows up as a failure instead of
  * quietly reading as "this address holds nothing".
  */
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 export function fixtureProvider(fixture: HolderFixture) {
   return {
     getBalance: async (address: string): Promise<bigint> => {
@@ -91,6 +111,72 @@ export function fixtureProvider(fixture: HolderFixture) {
       }
 
       return BigInt(native);
+    },
+
+    /**
+     * Replays the recorded Transfer/Deposit history as logs.
+     *
+     * Answers only for the contract it describes and only for the two events
+     * the scanner asks about. Anything else throws rather than returning an
+     * empty set, which would read as "nothing happened" — a confident answer
+     * built from a gap.
+     */
+    getLogs: async (filter: {
+      address: string;
+      topics: (string | null)[];
+      fromBlock: number | string;
+      toBlock: number | string;
+    }): Promise<RawLog[]> => {
+      if (filter.address.toLowerCase() !== fixture.contract.toLowerCase()) {
+        throw new Error(
+          `Fixture records no logs for ${filter.address}; only ${fixture.contract} is described`,
+        );
+      }
+
+      const transferTopic =
+        trackedContractInterface.getEvent("Transfer")?.topicHash ?? "";
+      const depositTopic =
+        trackedContractInterface.getEvent("Deposit")?.topicHash ?? "";
+      const topic = filter.topics[0];
+
+      const name =
+        topic === transferTopic
+          ? "Transfer"
+          : topic === depositTopic
+            ? "Deposit"
+            : null;
+
+      if (name === null) {
+        throw new Error(
+          `Fixture records no logs for topic ${String(topic)}; only Transfer and Deposit are described`,
+        );
+      }
+
+      // Topics and data are hex strings: they must carry the 0x prefix.
+      const pad = (value: string) =>
+        `0x${value.slice(2).toLowerCase().padStart(64, "0")}`;
+      const from = Number(filter.fromBlock);
+      const to = Number(filter.toBlock);
+
+      return (fixture.events ?? [])
+        .filter(
+          (event) =>
+            event.type === name && event.block >= from && event.block <= to,
+        )
+        .map((event) => {
+          const wad = pad(`0x${BigInt(event.wad).toString(16)}`);
+          return event.type === "Deposit"
+            ? { topics: [topic as string, pad(event.dst)], data: wad, blockNumber: event.block }
+            : {
+                topics: [
+                  topic as string,
+                  pad(event.src ?? ZERO_ADDRESS),
+                  pad(event.dst),
+                ],
+                data: wad,
+                blockNumber: event.block,
+              };
+        });
     },
 
     call: async ({ to, data }: { to: string; data: string }): Promise<string> => {

@@ -145,6 +145,91 @@ npm run wallet:derive -- 0             # the address to send tokens to
 
 ---
 
+## Finding every holder
+
+The contract cannot enumerate its holders — `balanceOf` is a mapping, and you
+need a key before it will answer. But the accounts are recoverable from logs,
+and once you have them the contract tells you exactly what each holds today.
+
+**Enumerate from logs, then read balances live.** Not one or the other.
+
+```bash
+npm run holders:scan -- --from-block <deploymentBlock>   # live
+npm run holders:scan -- --offline                        # recorded history
+```
+
+Against the recorded history:
+
+```
+candidates: 4 address(es) ever received ABT
+holders:    4 with a non-zero balance now
+supply:     42.591
+
+  0x54f44eA3…   34.505   81.0148%
+  0xf7bAc63f…    7.485   17.5741%
+  0xc186fA91…     0.45    1.0566%
+  0x9A8f92a8…     0.151    0.3545%
+```
+
+### Three corrections worth recording
+
+**1. `balanceOf` *is* public.** It is in the ABI as
+`function balanceOf(address) view returns (uint256)` — Solidity generates a
+getter for `public` mappings, and this project calls it on every run. What the
+contract cannot do is *list* holders, which is a different thing. The practical
+consequence matters: you do not need to reconstruct balances from logs. Logs
+give you *addresses*; `balanceOf` gives you *current* amounts. A log-derived
+balance goes stale the moment anyone moves.
+
+**2. `deposit()` emits `Deposit(dst, wad)` and no `Transfer`.** Scanning
+`Transfer` alone silently misses everyone who got ABT by wrapping ETH rather
+than receiving it. This scanner reads both events.
+
+**3. The snippet circulating is ethers v5.** This repo is **ethers v6**
+(`^6.13.5`). `ethers.providers.JsonRpcProvider` and `ethers.utils.formatEther`
+do not exist here; both are top-level imports now.
+
+### ethers v6, as this repo uses it
+
+```javascript
+import { JsonRpcProvider, Contract, formatEther, parseUnits } from "ethers";
+
+const ABT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
+const provider = new JsonRpcProvider(process.env.MAINNET_RPC_URL);
+const signer = await provider.getSigner(); // the wallet holding ABT
+
+const abt = new Contract(ABT, [
+  "function balanceOf(address) view returns (uint256)",
+  "function withdraw(uint256)",
+], signer);
+
+const balance = await abt.balanceOf(await signer.getAddress());
+if (balance === 0n) {
+  console.log("No ABT to withdraw");
+} else {
+  // Name the amount. Do not sweep: an explicit amount is auditable, and a
+  // sweep can fail on gas estimation with no balance left to retry with.
+  const wad = parseUnits("1", 18);
+  const tx = await abt.withdraw(wad);
+  await tx.wait();
+  console.log(`Withdrawn ${formatEther(wad)} ETH`);
+}
+```
+
+`withdraw` is **not** payable — you send no value; the contract sends ETH to
+you. Gas still comes from the caller.
+
+### One open question, flagged rather than asserted
+
+The hubPool transfer gate is documented here as living inside `transferFrom`
+(`if (dst == address(hubPool))`, requiring `proposers[src]` or that you are not
+the current bundle proposer). If `transfer` is **not** separately overridden,
+then plain `transfer(hubPool, wad)` would bypass that check entirely.
+
+That is a claim about the verified source, not something confirmed by a call —
+this sandbox has no chain access. Treat it as unverified until someone runs a
+`balanceOf`/`transfer` trace on mainnet.
+
 ## Can you become the owner?
 
 Two questions, because they fail for unrelated reasons. Both are answered live

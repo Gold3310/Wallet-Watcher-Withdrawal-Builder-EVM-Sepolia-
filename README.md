@@ -1122,7 +1122,15 @@ the history reads as a list of things that happened rather than a log of nothing
 happening. Holder reads run in their own try/catch, so a failure to reach them
 cannot stop the wallet sync from running.
 
-## Withdrawals
+## Holders
+
+`npm run holders:scan` discovers who holds ABT by scanning `Transfer` and
+`Deposit` logs, then reads each candidate's balance with `balanceOf` —
+enumerate from logs, read balances live. It needs no indexer and no API key.
+
+`npm run holders:scan -- --offline` replays a recorded history instead.
+
+
 
 Withdrawals are catalogued in **[WITHDRAWALS.md](WITHDRAWALS.md)** — every
 function that moves value, its selector, what it needs, and the exact

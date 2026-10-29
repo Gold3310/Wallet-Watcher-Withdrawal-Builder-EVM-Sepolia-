@@ -1,5 +1,4 @@
 {
-  "_comment": "Recorded holder data, NOT a live read. Balances were taken from the Etherscan token-holder list for the tracked contract on 2026-10-28, before the poller existed. Used by `npm run addresses:confirm -- --offline` to exercise and demonstrate the report without a network. Percentages were cross-checked against the 42.591 total supply and agree.",
   "recordedAt": "2026-10-28",
   "source": "Etherscan token holder list (paste from user)",
   "network": "mainnet",
@@ -12,8 +11,44 @@
   "balances": {
     "0x54f44ea3d2e7aa0ac089c4d8f7c93c27844057bf": "34505000000000000000",
     "0xf7bac63fc7ceacf0589f25454ecf5c2ce904997c": "7485000000000000000",
-    "0xc186fa914353c44b2e33ebe05f21846f1048beda": "450000000000000000"
+    "0xc186fa914353c44b2e33ebe05f21846f1048beda": "450000000000000000",
+    "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d": "151000000000000000"
   },
   "native": {},
-  "owner": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"
+  "owner": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+  "deploymentBlock": 20000000,
+  "events": [
+    {
+      "type": "Transfer",
+      "src": "0x0000000000000000000000000000000000000000",
+      "dst": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+      "wad": "42591000000000000000",
+      "block": 20000001
+    },
+    {
+      "type": "Transfer",
+      "src": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+      "dst": "0x54f44eA3D2e7aA0ac089c4d8F7C93C27844057BF",
+      "wad": "34505000000000000000",
+      "block": 20000150
+    },
+    {
+      "type": "Transfer",
+      "src": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+      "dst": "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c",
+      "wad": "7485000000000000000",
+      "block": 20000151
+    },
+    {
+      "type": "Transfer",
+      "src": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+      "dst": "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
+      "wad": "450000000000000000",
+      "block": 20000152
+    }
+  ],
+  "_comment": "Recorded holder data, NOT a live read. Balances were taken from the Etherscan token-holder list for the tracked contract on 2026-10-28, before the poller existed. Used by `npm run addresses:confirm -- --offline` to exercise and demonstrate the report without a network. Percentages were cross-checked against the 42.591 total supply and agree. The deployer's residual 0.151 is DERIVED by subtraction (totalSupply 42.591 - recorded holders 42.44) so the fixture balances internally; it was absent from the pasted holder list and needs confirming against Etherscan. Reconstructed Transfer history stands in for a log scan and is itself a reconstruction, not an observed log set.",
+  "_derived": {
+    "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d": "0.151, derived by subtraction (totalSupply 42.591 - recorded holders 42.44) so the fixture balances. Not in the pasted holder list."
+  }
 }
