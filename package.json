@@ -18,7 +18,8 @@
     "token:mint": "tsx scripts/mint-token.ts",
     "addresses:confirm": "tsx scripts/confirm-addresses.ts",
     "withdrawals": "tsx scripts/withdrawals.ts",
-    "holders:scan": "tsx scripts/scan-holders.ts"
+    "holders:scan": "tsx scripts/scan-holders.ts",
+    "withdraw:plan": "tsx scripts/plan-withdrawal.ts"
   },
   "author": "Mumtaz503",
   "license": "ISC",

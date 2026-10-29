@@ -12,11 +12,13 @@ import {
   buildWithdrawalCatalog,
   findWithdrawalCapability,
 } from "../../domain/assets/withdrawals.catalog.js";
+import { planWithdrawal } from "../../domain/assets/withdraw.plan.js";
 import {
   createUnwrap,
   UnwrapRequest,
 } from "../../domain/assets/unwrap.service.js";
 import { getHolderActivity } from "../../infra/db/database.js";
+import { getProvider } from "../../infra/rpc/provider.js";
 import { actorId } from "../middleware/auth.js";
 import {
   abandonIdempotentRequest,
@@ -211,6 +213,49 @@ assetsRouter.get(
         return;
       }
       res.json(capability);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * POST /assets/withdraw/plan
+ *
+ * Build the withdrawal for a named address and say whether it can be signed
+ * here or has to be signed by whoever holds that address. Nothing is signed
+ * and nothing is broadcast.
+ *
+ * `withdraw()` burns the caller's own balance, so the only question that
+ * matters is whether this service holds a key for `from`. When it does not,
+ * the response is a signing kit for the holder — not a workaround.
+ */
+assetsRouter.post(
+  "/withdraw/plan",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as {
+        from?: string;
+        amountWei?: string;
+        chainId?: number;
+      };
+
+      if (body.from === undefined || body.amountWei === undefined) {
+        res.status(400).json({ error: "from and amountWei are required" });
+        return;
+      }
+
+      res.json(
+        await planWithdrawal(
+          getProvider() as never,
+          config.trackedContracts[0],
+          {
+            from: body.from,
+            amountWei: body.amountWei,
+            ...(body.chainId === undefined ? {} : { chainId: body.chainId }),
+          },
+        ),
+      );
     } catch (error) {
       next(error);
     }

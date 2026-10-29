@@ -145,6 +145,54 @@ npm run wallet:derive -- 0             # the address to send tokens to
 
 ---
 
+## Withdrawing from a specific holder
+
+`withdraw(uint256)` burns the **caller's own** balance. Nobody can redeem
+someone else's ABT — not this service, not the contract owner, not a relayer.
+So plan the withdrawal for a named address and find out first:
+
+```bash
+npm run withdraw:plan -- --from 0xf7bAc63f… --amount 7.485 --chain-id 1
+POST /assets/withdraw/plan   { "from": "0x…", "amountWei": "7485000000000000000" }
+```
+
+Nothing is signed and nothing is broadcast. It answers one question — *can this
+service sign for that address?* — and then either routes you to
+`POST /assets/unwrap` or hands you a signing kit for the holder.
+
+### `0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c` (7.485 ABT)
+
+```
+from:          0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c
+amount:        7.485 ABT (7485000000000000000 units)
+balance:       7.485
+sufficient:    yes
+can sign here: NO
+route:         external
+
+TRANSACTION (unsigned)
+  to:    0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea
+  data:  0x2e1a7d4d00000000000000000000000000000000000000000000000067e00fd7bfcc8000
+  value: 0
+  chain: 1
+```
+
+The balance covers it. **The signature does not exist here.** That address is
+not derived from `WALLET_MNEMONIC`, so there is no key for it in this project,
+and `withdraw()` will revert for anyone who is not that address regardless of
+what they hold or who they are.
+
+Only the holder of `0xf7bAc63f…` can redeem those 7.485 ABT, by signing that
+transaction in whatever wallet controls the address. Gas comes from the same
+address, so it needs ETH for gas separately from the ABT being burned.
+
+**This service will not accept a private key to get around that.** If the key
+is not derivable from `WALLET_MNEMONIC`, there is no path here, and pretending
+otherwise would be worse than saying so.
+
+If you do hold that key, sign the transaction above in MetaMask, a Ledger, or
+your own script — you do not need this project to do it.
+
 ## Finding every holder
 
 The contract cannot enumerate its holders — `balanceOf` is a mapping, and you

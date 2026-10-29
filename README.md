@@ -1122,7 +1122,21 @@ the history reads as a list of things that happened rather than a log of nothing
 happening. Holder reads run in their own try/catch, so a failure to reach them
 cannot stop the wallet sync from running.
 
-## Holders
+## Withdrawing from a named address
+
+```bash
+npm run withdraw:plan -- --from <address> --amount <amount> [--chain-id N] [--offline]
+```
+
+Plans a withdrawal and answers the only question that matters first: **can this
+service sign for that address?** `withdraw()` burns the caller's own balance, so
+if there is no key here, there is no route here — and the plan says that
+plainly, then hands over the exact transaction the holder must sign themselves.
+
+Nothing is signed, nothing is broadcast. See
+[WITHDRAWALS.md](WITHDRAWALS.md#withdrawing-from-a-specific-holder).
+
+
 
 `npm run holders:scan` discovers who holds ABT by scanning `Transfer` and
 `Deposit` logs, then reads each candidate's balance with `balanceOf` —
