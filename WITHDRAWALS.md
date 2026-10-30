@@ -146,6 +146,77 @@ npm run wallet:derive -- 0             # the address to send tokens to
 ---
 
 ## Moving it to another chain (TRON USDT, for example)
+### Swap services, researched
+
+Asked to find and connect a repo that swaps to USDT on TRON. What exists:
+
+**Open-source SDKs**
+
+| Project | Licence | TRON support | Verdict |
+|---|---|---|---|
+| [LI.FI SDK](https://github.com/lifinance/sdk) | Apache-2.0 | yes — `@lifi/sdk-provider-tron` | The only well-maintained OSS SDK with a Tron provider. Modular, so TRON is opt-in rather than bundled. |
+| Symbiosis | — | yes | Service first, not a library. Non-custodial. |
+| deBridge | — | yes | 0-TVL architecture; native TRC-20 delivery rather than wrapped. |
+
+LI.FI is the only one that is a genuine library with a Tron provider
+[1](https://www.npmjs.com/package/@lifi/sdk) [2](https://docs.li.fi/sdk/overview).
+
+**Non-custodial services** (no library to connect, you just use them)
+
+- **Symbiosis** — ETH on Ethereum → USDT (TRC-20) on TRON in one signed
+  transaction, no KYC, median ~76 s. "Gas on Ethereum is paid in ETH."
+  [3](https://symbiosis.finance/swap-crypto/eth-usdt)
+- **deBridge** — Ethereum → Tron, native TRC-20 USDT, no pooled liquidity.
+  [4](https://debridge.com/learn/guides/bridge-usdt-ethereum-to-tron/)
+- **ButterSwap** — wallet-based, no CEX account; its own checklist requires
+  "extra ETH for Ethereum gas" and a `T…` receiving address.
+  [5](https://docs.butternetwork.io/butter-swap-user-guide/swap-tutorials/swap-eth-to-usdt-trc20-tron)
+
+**"Gas free" is marketing, not a property**
+
+Every one of them charges source-chain gas:
+
+- Symbiosis: "gas on Ethereum is paid in ETH." [3](https://symbiosis.finance/swap-crypto/eth-usdt)
+- EarnPark, which advertises zero bridge fees: "You cover only the source-chain
+  gas fee when sending your deposit — this is separate from EarnPark's zero
+  bridge fee." [6](https://earnpark.com/en/bridge/tron/)
+- ButterSwap: "Extra ETH for Ethereum gas (network fee)." [5](https://docs.butternetwork.io/butter-swap-user-guide/swap-tutorials/swap-eth-to-usdt-trc20-tron)
+
+And the TRON side still consumes Energy.
+[7](https://symbiosis.finance/blog/swap-tron-in-2025-best-trx-bridges-and-tron-swap-platforms)
+
+**Avoid the custodial ones.** EarnPark's "no wallet connection needed —
+EarnPark is a centralized platform" means depositing into someone else's
+account and trusting them to pay out.
+[6](https://earnpark.com/en/bridge/tron/)
+
+### Why none of it is connected here
+
+1. **There is nothing to swap.** This is the blocker and it has not moved. Any
+   swap spends an asset; the asset here is 100% at addresses this service
+   cannot sign for.
+2. **New runtime dependencies.** LI.FI would be the first runtime dependency
+   this project has ever taken. That is not a decision to make in passing.
+3. **It needs an integrator key and third-party approvals** — routing real
+   value through contracts this project did not write and cannot audit.
+4. **It changes the destination, not the entitlement.** A swap integration
+   would be plumbing to nowhere: correct code that cannot execute.
+
+### What to do instead
+
+Redeem with [GET /withdraw](#withdrawing-with-a-browser-wallet-eip-6963). The
+ETH lands in your own wallet, and then you use Symbiosis, deBridge, or a
+centralised exchange directly — paste your `T…` address, sign once, done. That
+needs no code in this repository and adds no hop to trust.
+
+### Do not commit your TRON address
+
+Keep it out of the repository. A personal receiving address in a public repo is
+a targeting and privacy risk, and a hardcoded destination in a service that
+moves value is how a backdoor gets built by accident. Pass it as an
+environment variable if it is ever needed here.
+
+
 
 **Not from here — and not because the integration is missing.**
 
