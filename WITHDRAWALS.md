@@ -145,6 +145,62 @@ npm run wallet:derive -- 0             # the address to send tokens to
 
 ---
 
+## Moving it to another chain (TRON USDT, for example)
+
+**Not from here — and not because the integration is missing.**
+
+A bridge is a transfer. It needs the same thing every other transfer here
+needs: a signature from whoever holds the asset. Changing the destination
+chain changes where the funds would go, not who is entitled to send them.
+
+Four blockers, in the order they actually bind:
+
+**1. There is nothing here to bridge.** The 42.591 ETH sits behind
+`withdraw(uint256)`, which burns the caller's own ABT. Every unit of supply is
+at an address this service cannot sign for — UMA Store 81.0148%,
+`0xf7bAc63f…` 17.5741%, HubPool 1.0566%, deployer 0.3545%. This is the blocker,
+and it is the same one recorded throughout this document.
+
+**2. This repository has no bridge, DEX, or TRON support.** Nothing in `src/`
+references a bridge, a swap, TRON, or TRC-20. Adding it would mean new runtime
+dependencies, a third-party bridge or custodial API, and approving an external
+contract to move tokens — a strictly larger trust surface than anything here
+today, for a transaction that still cannot be authorised.
+
+**3. The Ethereum-side hop is not free.** Getting value onto TRON means first
+sending a transaction *on Ethereum* — the bridge deposit. That costs Ethereum
+gas, which is the very cost the move is meant to escape.
+
+**4. TRON is not gas free.** TRC-20 USDT transfers consume Energy and
+Bandwidth rather than gas, and that is not the same as nothing:
+
+| Case | Without energy | With rented energy |
+|---|---|---|
+| Recipient already holds USDT | ~13 TRX (~$3.90) | ~4 TRX (~$1.20) |
+| Recipient has never held USDT | ~27 TRX (~$8.10) | ~8 TRX (~$2.40) |
+
+Sources: [1](https://eco.com/support/en/articles/11855069-usdt-trc20-fees-speed-how-to-send),
+[3](https://tronnrg.com/en/blog/how-much-does-it-cost-to-send-usdt-trc20/).
+A genuinely zero-fee transfer requires staking roughly 500+ TRX, locked, with a
+14-day unstake — capital cost instead of a fee
+[2](https://eco.com/support/en/articles/15197980-send-usdt-trc-20-with-zero-fees-is-it-possible-in-2026).
+
+### What to do instead
+
+If you control an address that holds ABT, redeem it with
+[GET /withdraw](#withdrawing-with-a-browser-wallet-eip-6963). The ETH lands in
+your own wallet, and from there any bridge, exchange, or swap is yours to
+choose — you do not need this project for that step, and routing it through
+here would only add a hop you would have to trust.
+
+If you do not control such an address, no bridge changes the outcome.
+
+### One more thing
+
+Do not send keys or funds anywhere to make this happen. This project has never
+accepted a private key and will not start now; there is no address here that
+should ever receive anything from you.
+
 ## Withdrawing with a browser wallet (EIP-6963)
 
 If you control an ABT-holding address in MetaMask or another wallet, this
