@@ -68,7 +68,8 @@ export type SweepStepStatus =
   | "failed";
 
 export interface SweepRequest {
-  toAddress: string;
+  /** Destination address. Defaults to `config.ownerAddress` when configured. */
+  toAddress?: string;
   /** Wallet indices to inspect. Defaults to every configured wallet (0..N-1). */
   walletIndices?: number[];
   /**
@@ -499,13 +500,18 @@ function summarizeReport(
 }
 
 export async function createSweep(request: SweepRequest): Promise<SweepReport> {
-  if (!request.toAddress || typeof request.toAddress !== "string") {
-    throw new BadRequestError("toAddress is required");
+  if (request.toAddress !== undefined && typeof request.toAddress !== "string") {
+    throw new BadRequestError("toAddress must be an address string");
+  }
+
+  const rawDestination = request.toAddress?.trim() || config.ownerAddress;
+  if (!rawDestination) {
+    throw new BadRequestError("toAddress is required (or set OWNER_ADDRESS)");
   }
 
   let toAddress: string;
   try {
-    toAddress = normalizeDestinationAddress(request.toAddress);
+    toAddress = normalizeDestinationAddress(rawDestination);
   } catch {
     throw new BadRequestError("Destination address is invalid");
   }

@@ -17,11 +17,11 @@ const VALUE_FLAGS = new Set(["--to", "--index", "--token", "--unwrap-token", "--
 const BOOL_FLAGS = new Set(["--unwrap", "--eth-only", "--no-eth", "--broadcast", "--help", "-h"]);
 
 const USAGE =
-  "Usage: npm run wallet:sweep -- --to <0xAddress> [--index 0,1] [--token 0x...] " +
+  "Usage: npm run wallet:sweep -- [--to <0xAddress>] [--index 0,1] [--token 0x...] " +
   "[--unwrap] [--unwrap-token 0x...] [--eth-only] [--no-eth] [--out <report.json>] [--broadcast]";
 
 interface ParsedCli {
-  toAddress: string;
+  toAddress?: string;
   walletIndices?: number[];
   tokens?: string[];
   unwrap: boolean;
@@ -82,8 +82,8 @@ function parseCli(argv: readonly string[]): ParsedCli {
     throw new Error(`Unknown option: ${token}\n${USAGE}`);
   }
 
-  if (!toAddress) {
-    throw new Error(`--to is required.\n${USAGE}`);
+  if (!toAddress && !process.env.OWNER_ADDRESS?.trim()) {
+    throw new Error(`--to is required (or set OWNER_ADDRESS in your .env).\n${USAGE}`);
   }
 
   if (ethOnly && noEth) {
@@ -105,7 +105,7 @@ function parseCli(argv: readonly string[]): ParsedCli {
   }
 
   return {
-    toAddress,
+    ...(toAddress !== undefined ? { toAddress } : {}),
     ...(walletIndices !== undefined ? { walletIndices } : {}),
     ...(ethOnly ? { tokens: [] } : rawTokens.length > 0 ? { tokens: rawTokens } : {}),
     unwrap,
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   initializeWallets();
 
   const report = await createSweep({
-    toAddress: cli.toAddress,
+    ...(cli.toAddress !== undefined ? { toAddress: cli.toAddress } : {}),
     ...(cli.walletIndices !== undefined ? { walletIndices: cli.walletIndices } : {}),
     ...(cli.tokens !== undefined ? { tokens: cli.tokens } : {}),
     unwrap: cli.unwrap,

@@ -33,7 +33,7 @@ const W4 = deriveWalletAtIndex(TEST_MNEMONIC, 4).address;
 
 const DESTINATION = "0x2EF4c86Bdd42884339643D2beCB32988D90A46F4";
 const OTHER_DESTINATION = "0x8888888888888888888888888888888888888888";
-const OWNER = "0x1111111111111111111111111111111111111111";
+const OWNER = "0x36037C9CeBd79Fd985816227F64B3f7362aD40B7";
 const WETH = "0x4444444444444444444444444444444444444444";
 const TOKEN = "0x5555555555555555555555555555555555555555";
 const TOKEN_API_SECRET = "secret-sweep-token";
@@ -937,6 +937,7 @@ describe("POST /withdrawals/sweep HTTP endpoint", () => {
         };
 
         expect((await post({ toAddress: DESTINATION, unwrap: true })).status).toBe(400);
+        expect((await post({})).status).toBe(400);
         expect(
           (await post({ toAddress: DESTINATION, includeNative: false, tokens: [] })).status,
         ).toBe(400);
@@ -946,6 +947,38 @@ describe("POST /withdrawals/sweep HTTP endpoint", () => {
         expect(
           (await post({ toAddress: getAddress(DESTINATION), tokens: ["not-addr"] })).status,
         ).toBe(400);
+      },
+    );
+  });
+
+  it("defaults toAddress to OWNER_ADDRESS when omitted", async () => {
+    await withSweepServer(
+      {
+        OWNER_ADDRESS: OWNER.toLowerCase(),
+        API_TOKENS: `${OWNER}:${TOKEN_API_SECRET}`,
+        WITHDRAWAL_ALLOWLIST: OWNER.toLowerCase(),
+      },
+      {
+        ethBalances: { [W0.toLowerCase()]: parseEther("0.2") },
+      },
+      async ({ baseUrl, broadcastTransaction }) => {
+        const res = await fetch(`${baseUrl}/withdrawals/sweep`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${TOKEN_API_SECRET}`,
+            "idempotency-key": "default-owner-sweep",
+          },
+          body: JSON.stringify({ walletIndices: [0], broadcast: true }),
+        });
+
+        expect(res.status).toBe(201);
+        const body = (await res.json()) as { toAddress: string; requestedBy: string };
+        expect(body.toAddress).toBe(OWNER);
+        expect(body.requestedBy).toBe(OWNER);
+        expect(broadcastTransaction).toHaveBeenCalledTimes(1);
+        const parsed = Transaction.from(broadcastTransaction.mock.calls[0]![0] as string);
+        expect(parsed.to).toBe(OWNER);
       },
     );
   });
@@ -1059,8 +1092,6 @@ describe("wallet:sweep CLI script", () => {
         [
           "node_modules/.bin/tsx",
           "scripts/sweep-wallets.ts",
-          "--to",
-          DESTINATION,
           "--index",
           "0",
           "--eth-only",
@@ -1073,15 +1104,15 @@ describe("wallet:sweep CLI script", () => {
             WALLET_MNEMONIC: TEST_MNEMONIC,
             WALLET_COUNT: "5",
             DATABASE_PATH: ":memory:",
-            OWNER_ADDRESS: undefined,
-            API_TOKENS: undefined,
-            WITHDRAWAL_ALLOWLIST: undefined,
+            OWNER_ADDRESS: OWNER,
+            API_TOKENS: `${OWNER}:${TOKEN_API_SECRET}`,
+            WITHDRAWAL_ALLOWLIST: OWNER,
           },
         },
       );
       expect(sentOut).toMatch(/Wallet sweep on sepolia/);
       expect(sentRaw).toHaveLength(1);
-      expect(Transaction.from(sentRaw[0]!).to).toBe(DESTINATION);
+      expect(Transaction.from(sentRaw[0]!).to).toBe(OWNER);
     } finally {
       await new Promise<void>((resolve) => rpcServer.close(() => resolve()));
     }

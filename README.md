@@ -445,7 +445,7 @@ that). Either way it changes nothing about access to the ETH:
   `withdraw()`.
 
 So the question remains the one from before, and it is the only one that
-matters: **does `0x2ddfbeca…` — or any wallet derived from your mnemonic — hold
+matters: **does `0x36037C9C…` — or any wallet derived from your mnemonic — hold
 ABT?**
 
 ### `POST /assets/unwrap`
@@ -522,15 +522,17 @@ Example response (`broadcast: false`):
 ### `POST /withdrawals/sweep` and `npm run wallet:sweep`
 
 Moves **remaining balances in the wallets derived from your `WALLET_MNEMONIC`**
-(`0..WALLET_COUNT-1`) to a single destination address. Plans everything first and
-sends nothing unless `broadcast: true` (or `--broadcast` on the CLI).
+(`0..WALLET_COUNT-1`) to a single destination address (defaulting to
+`OWNER_ADDRESS` when set in `.env`, i.e. `0x36037C9CeBd79Fd985816227F64B3f7362aD40B7`).
+Plans everything first and sends nothing unless `broadcast: true` (or `--broadcast`
+on the CLI).
 
 ```bash
-# Plan across all wallets (reads live balances, sends nothing)
-npm run wallet:sweep -- --to 0xNewDestination...
+# Plan across all wallets to OWNER_ADDRESS (reads live balances, sends nothing)
+npm run wallet:sweep
 
-# Unwrap wrapped ETH, transfer any other ERC-20s, and sweep all ETH for real
-npm run wallet:sweep -- --to 0xNewDestination... --unwrap --broadcast
+# Or specify --to explicitly, unwrap wrapped ETH, transfer any other ERC-20s, and sweep all ETH for real
+npm run wallet:sweep -- --to 0x36037C9CeBd79Fd985816227F64B3f7362aD40B7 --unwrap --broadcast
 ```
 
 Or over HTTP (requires bearer auth + `Idempotency-Key` when `broadcast: true`):
@@ -540,7 +542,7 @@ curl -s localhost:3000/withdrawals/sweep \
   -H "Authorization: Bearer $OWNER_SECRET" \
   -H "Idempotency-Key: sweep-1" \
   -H 'Content-Type: application/json' \
-  -d '{"toAddress":"0xNewDestination...","unwrap":true,"broadcast":true}'
+  -d '{"toAddress":"0x36037C9CeBd79Fd985816227F64B3f7362aD40B7","unwrap":true,"broadcast":true}'
 ```
 
 Within each wallet, steps execute in order:
@@ -839,8 +841,8 @@ curl -s -X POST http://localhost:3000/permissions/1/revoke
 This service runs for **exactly one owner** — the address in `OWNER_ADDRESS`:
 
 ```
-OWNER_ADDRESS=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce
-API_TOKENS=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce:<secret>
+OWNER_ADDRESS=0x36037C9CeBd79Fd985816227F64B3f7362aD40B7
+API_TOKENS=0x36037C9CeBd79Fd985816227F64B3f7362aD40B7:<secret>
 ```
 
 That is enforced, not merely documented. On boot the process refuses to start
@@ -869,7 +871,7 @@ separate list, and it ships restricted to the owner — so out of the box, funds
 can only move to you:
 
 ```
-WITHDRAWAL_ALLOWLIST=0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce
+WITHDRAWAL_ALLOWLIST=0x36037C9CeBd79Fd985816227F64B3f7362aD40B7
 ```
 
 Add comma-separated addresses to widen it; empty it to allow any destination.

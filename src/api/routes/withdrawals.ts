@@ -176,7 +176,17 @@ function assertBoolean(
 }
 
 function validateSweepRequest(body: SweepBody): SweepRequest {
-  if (typeof body.toAddress !== "string" || !body.toAddress.trim()) {
+  let toAddress: string | null = null;
+  if (body.toAddress !== undefined) {
+    if (typeof body.toAddress !== "string" || !body.toAddress.trim()) {
+      throw new BadRequestError("toAddress must be a non-empty address string");
+    }
+    toAddress = body.toAddress.trim();
+  } else if (config.ownerAddress) {
+    toAddress = config.ownerAddress;
+  }
+
+  if (!toAddress) {
     throw new BadRequestError("toAddress is required");
   }
 
@@ -207,7 +217,7 @@ function validateSweepRequest(body: SweepBody): SweepRequest {
   const broadcast = assertBoolean(body.broadcast, "broadcast", false);
 
   return {
-    toAddress: body.toAddress.trim(),
+    toAddress,
     ...(walletIndices !== undefined ? { walletIndices } : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     unwrap,

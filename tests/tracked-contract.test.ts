@@ -11,7 +11,7 @@ import {
 } from "../src/domain/assets/abi.js";
 
 const CONTRACT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
-const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
+const OWNER = "0x36037c9cebd79fd985816227f64b3f7362ad40b7";
 const OWNER_CHECKSUMMED = getAddress(OWNER);
 /** The deployer. Ownable makes the deployer the initial owner. */
 const CONTRACT_CREATOR = "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";

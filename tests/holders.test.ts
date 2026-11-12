@@ -9,7 +9,7 @@ import {
 } from "../src/domain/assets/holders.js";
 
 const CONTRACT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
-const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
+const OWNER = "0x36037c9cebd79fd985816227f64b3f7362ad40b7";
 const CREATOR = "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D";
 const WALLET_0 = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
