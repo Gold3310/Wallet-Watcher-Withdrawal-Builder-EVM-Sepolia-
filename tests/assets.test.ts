@@ -246,7 +246,7 @@ describe("asset reporting", () => {
 });
 
 describe("assets on mainnet", () => {
-  const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
+  const OWNER = "0x36037c9cebd79fd985816227f64b3f7362ad40b7";
   const SECRET = "mainnet-owner-secret";
 
   const MAINNET_ENV: Record<string, string | undefined> = {

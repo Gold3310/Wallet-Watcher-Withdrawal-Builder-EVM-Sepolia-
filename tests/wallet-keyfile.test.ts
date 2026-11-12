@@ -76,7 +76,7 @@ describe("rejecting things that look like seeds but are not", () => {
       /is an ADDRESS, not a mnemonic/,
     );
     expect(() =>
-      buildWalletKeyFile("0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce", 0),
+      buildWalletKeyFile("0x36037c9cebd79fd985816227f64b3f7362ad40b7", 0),
     ).toThrow(/is an ADDRESS, not a mnemonic/);
   });
 

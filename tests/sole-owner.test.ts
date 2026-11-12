@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { withConfig } from "./helpers/withConfig.js";
 
 /** The one address allowed to use the service. */
-const OWNER = "0x2ddfbeca5b62f310a5f8edefb4fc026a99b979ce";
-const OWNER_CHECKSUMMED = "0x2ddFBecA5B62f310A5F8edEFB4fC026A99B979CE";
+const OWNER = "0x36037c9cebd79fd985816227f64b3f7362ad40b7";
+const OWNER_CHECKSUMMED = "0x36037C9CeBd79Fd985816227F64B3f7362aD40B7";
 /** The contract this service tracks. */
 const CONTRACT = "0xee1DC6BCF1Ee967a350e9aC6CaaAA236109002ea";
 /** Anybody else. */

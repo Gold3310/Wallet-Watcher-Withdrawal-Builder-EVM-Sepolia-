@@ -15,6 +15,16 @@ import type { JsonRpcProvider } from "ethers";
 
 const nextNonceByWallet = new Map<number, number>();
 
+export async function peekNonce(
+  walletIndex: number,
+  address: string,
+  provider: JsonRpcProvider,
+): Promise<number> {
+  const networkNonce = await provider.getTransactionCount(address, "pending");
+  const cached = nextNonceByWallet.get(walletIndex) ?? 0;
+  return Math.max(cached, networkNonce);
+}
+
 export async function allocateNonce(
   walletIndex: number,
   address: string,
