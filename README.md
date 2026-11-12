@@ -12,6 +12,7 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Asset reporting: native and ERC-20 balances across every wallet, with totals
 - Sole-owner access control: one address, enforced at boot and on every request
 - Runs on Sepolia or mainnet, with per-chain guardrails when funds are real
+- Offline verification of decoded Aragon governance payloads (EVMScripts) against their raw bytes
 - Unit tests for wallet derivation, transaction building, permissions and network config
 
 ## Wallet derivation (BIP-39 / BIP-44)
@@ -1158,6 +1159,95 @@ The test suite runs this machinery against
 rows that exist only to cover the code paths. No row in it corresponds to a real
 transaction, and it can never be verified against a chain.
 
+## Verifying a decoded governance payload
+
+Decoders turn an Aragon EVMScript into a readable tree — contract names,
+function names, arguments, nested calls. That tree is a claim about the bytes,
+and only the bytes execute. `verify:evmscript` checks the claim against them,
+offline:
+
+```bash
+npm run verify:evmscript -- --in <decoded.json> [--sig "fn(type,...)"] [--role NAME] [--out <report.json>]
+```
+
+The input is the decoder's JSON: one call or an array, each with
+`contractAddress`, `functionName`, `selector`, `args` and optional
+`nestedCalls`. It reads no RPC, holds no keys, and exits non-zero unless every
+call verifies.
+
+Nested calls are **re-parsed from the raw script in the parent's arguments**,
+never taken from the decoder's own list — that list is the thing being checked.
+
+| Check | Failure means |
+|-------|---------------|
+| The script parses exactly as aragonOS's `CallsScript` executes it | Not an EVMScript, or one that reverts with `EVMCALLS_INVALID_LENGTH` |
+| Same calls, same count, same order | A call is hidden from the view, invented by it, or reordered |
+| Target and selector of each call | The view names a different contract or function than the one called |
+| The function name hashes to the selector | The label is wrong |
+| Arguments decode to the claimed values | The view shows arguments other than the encoded ones |
+| The calldata re-encodes byte for byte | It carries bytes the view does not show — see below |
+| A `bytes` argument that is itself a script is listed | Nested calls were dropped from the view |
+
+The re-encoding check is not a formality. ethers silently masks dirty padding —
+a `uint8` slot holding `0x0101` decodes as `1` — and ignores trailing bytes, so
+a decoded view can look perfect while the calldata says something else. Both
+cases are in the tests.
+
+Decoders rarely print the canonical signature, only a name. The verifier
+recovers it: it lists the Solidity types each printed argument could have, tries
+every combination under the claimed name, and keeps the one that hashes to the
+selector in the bytes. Tuples cannot be recovered that way; pass them with
+`--sig`. `bytes32` arguments that are the keccak256 of a known role name are
+labelled, so a `grantRole` reads as the role it grants.
+
+What it cannot tell you, and every report says so: which chain the payload is
+for, whether the `contractName` labels are right, whether the vote passed,
+whether these are the bytes actually submitted, who may execute it, and what
+upgraded code does once it runs.
+
+### Worked example: a Lido DAO Agent call
+
+`tests/fixtures/lido-nest-agent-forward.decoded.json` is real: a decoded
+`forward(bytes)` on Lido DAO's Aragon Agent on Ethereum mainnet
+(`0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c`). Calls 1–4 match the voting items
+published for Lido's ["Liquid Buybacks: NEST execution"][nest] proposal. All
+seven calls verify.
+
+| # | Call | What it does |
+|---|------|--------------|
+| 1 | `TokenRateNotifier.addObserver(OpStackTokenRatePusher, 0)` | Re-adds the existing Optimism rate pusher to the new notifier, as kind 0 |
+| 2 | `TokenRateNotifier.addObserver(StakingRevenueSource, 1)` | Adds the buyback revenue source, as kind 1, so it is called after each rebase |
+| 3 | `LidoLocator.proxy__upgradeTo(0xF2Ffb952…2313)` | New Locator implementation, repointing `postTokenRebaseReceiver` at the new notifier |
+| 4 | `addRecipient(BuybackAllocator, "Buyback Allocator")` on the Stonks stETH registry | Lets Easy Track top up the allocator with stETH |
+| 5 | `grantRole(ADD_RECIPIENT_TO_ALLOWED_LIST_ROLE, EVMScriptExecutor)` on `0x8d8b35cA…` | Easy Track motions may add recipients to that registry |
+| 6 | `grantRole(REMOVE_RECIPIENT_FROM_ALLOWED_LIST_ROLE, EVMScriptExecutor)` on `0x8d8b35cA…` | …and remove them |
+
+Two things the decoded view did not show, recovered from the bytes:
+
+- `addObserver` is **`addObserver(address,uint8)`**. Neither
+  `addObserver(address)` (`0xfb8ec972`) nor `addObserver(address,uint256)`
+  (`0xb25db1da`) hashes to `0xb8151420`. The `0` and `1` are an observer kind —
+  an enum — not positions.
+- The role hashes in calls 5 and 6 are `ADD_RECIPIENT_TO_ALLOWED_LIST_ROLE` and
+  `REMOVE_RECIPIENT_FROM_ALLOWED_LIST_ROLE`.
+
+The decoder labels `0x8d8b35cA…` "LOL stablecoins". Lido's deployed-contracts
+list confirms it is an Easy Track `AllowedRecipientsRegistry`; the label itself
+is the decoder's, and stays unverified.
+
+**This service cannot execute it.** `forward()` requires `RUN_SCRIPT_ROLE` and
+reverts with `AGENT_CAN_NOT_FORWARD` for any other sender. On Lido that role is
+held by governance — since Dual Governance, its admin executor, reached only
+through a DAO vote and the timelock. The wallets this service signs for are EOAs
+derived from your mnemonic, and none of them holds it. Sent from one of them,
+this would revert and cost gas.
+
+It moves no funds either: CallsScript attaches zero ETH to every call, and none
+of the six is a transfer. What it changes is configuration — and call 3 replaces
+code, which makes it the call that deserves the closest look.
+
+[nest]: https://research.lido.fi/t/liquid-buybacks-nest-execution-with-ldo-wsteth-liquidity/10894
+
 ## Funding test wallets
 
 After starting the service, copy addresses from `GET /wallets` and fund them using a Sepolia faucet, for example:
@@ -1195,6 +1285,7 @@ src/
 │   ├── balance/            # Balance sync + wallet views
 │   ├── ledger/             # Outflow recording
 │   ├── permissions/        # ERC-7715 grant/redeem + encoding
+│   ├── governance/         # Aragon EVMScript parsing + decoded-payload checks
 │   └── withdrawal/         # Tx build/sign/broadcast
 ├── infra/
 │   ├── db/                 # SQLite persistence

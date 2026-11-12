@@ -1,0 +1,85 @@
+[
+  {
+    "contractAddress": "0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c",
+    "id": 1,
+    "contractName": "AragonAgent",
+    "functionName": "forward",
+    "selector": "0xd948d468",
+    "args": [
+      "0x00000001be05d12fd10919f1881125006523452f6aff791b00000044b8151420000000000000000000000000d54c1c6413caac3477ac14b2a80d5398e3c32ffe0000000000000000000000000000000000000000000000000000000000000000be05d12fd10919f1881125006523452f6aff791b00000044b81514200000000000000000000000006220212a33a87ed7cc386b67eb2c393974f28c380000000000000000000000000000000000000000000000000000000000000001c1d0b3de6792bf6b4b37eccdcc24e45978cfd2eb000000243ebdd0eb000000000000000000000000f2ffb952e129a63f0614ff87126e1d4a494a23131a7cfa9efb4d5bffde87b0faeb1fc65d653868c000000084739b5384000000000000000000000000aa568141c051f2d1132b110f8391f18d48e8d889000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000114275796261636b20416c6c6f6361746f720000000000000000000000000000008d8b35ca51e7808098aff4918c21ce428c943f89000000442f2ff15dec20c52871c824e5437859e75ac830e83aaaaeb7b0ffd850de830ddd3e385276000000000000000000000000fe5986e06210ac1ecc1adcafc0cc7f8d63b3f9778d8b35ca51e7808098aff4918c21ce428c943f89000000442f2ff15d491d7752c25cfca0f73715cde1130022a9b815373f91a996bbb1ba8943efc99b000000000000000000000000fe5986e06210ac1ecc1adcafc0cc7f8d63b3f977"
+    ],
+    "nestedCalls": [
+      {
+        "contractAddress": "0xbe05d12fd10919f1881125006523452f6aff791b",
+        "id": 1,
+        "contractName": "TokenRateNotifier",
+        "functionName": "addObserver",
+        "selector": "0xb8151420",
+        "args": [
+          "0xd54c1c6413caac3477AC14b2a80D5398E3c32FfE",
+          0
+        ],
+        "nestedCalls": []
+      },
+      {
+        "contractAddress": "0xbe05d12fd10919f1881125006523452f6aff791b",
+        "id": 2,
+        "contractName": "TokenRateNotifier",
+        "functionName": "addObserver",
+        "selector": "0xb8151420",
+        "args": [
+          "0x6220212a33a87Ed7Cc386B67eB2c393974F28C38",
+          1
+        ],
+        "nestedCalls": []
+      },
+      {
+        "contractAddress": "0xc1d0b3de6792bf6b4b37eccdcc24e45978cfd2eb",
+        "id": 3,
+        "contractName": "LidoLocator",
+        "functionName": "proxy__upgradeTo",
+        "selector": "0x3ebdd0eb",
+        "args": [
+          "0xF2Ffb952e129a63F0614Ff87126E1d4a494A2313"
+        ],
+        "nestedCalls": []
+      },
+      {
+        "contractAddress": "0x1a7cfa9efb4d5bffde87b0faeb1fc65d653868c0",
+        "id": 4,
+        "contractName": "StonksStethAllowedRecipientsRegistry",
+        "functionName": "addRecipient",
+        "selector": "0x739b5384",
+        "args": [
+          "0xAA568141c051f2D1132b110f8391F18D48E8D889",
+          "Buyback Allocator"
+        ],
+        "nestedCalls": []
+      },
+      {
+        "contractAddress": "0x8d8b35ca51e7808098aff4918c21ce428c943f89",
+        "id": 5,
+        "contractName": "LOLStablecoinsAllowedRecipientsRegistry",
+        "functionName": "grantRole",
+        "selector": "0x2f2ff15d",
+        "args": [
+          "0xec20c52871c824e5437859e75ac830e83aaaaeb7b0ffd850de830ddd3e385276",
+          "0xFE5986E06210aC1eCC1aDCafc0cc7f8D63B3F977"
+        ],
+        "nestedCalls": []
+      },
+      {
+        "contractAddress": "0x8d8b35ca51e7808098aff4918c21ce428c943f89",
+        "id": 6,
+        "contractName": "LOLStablecoinsAllowedRecipientsRegistry",
+        "functionName": "grantRole",
+        "selector": "0x2f2ff15d",
+        "args": [
+          "0x491d7752c25cfca0f73715cde1130022a9b815373f91a996bbb1ba8943efc99b",
+          "0xFE5986E06210aC1eCC1aDCafc0cc7f8D63B3F977"
+        ],
+        "nestedCalls": []
+      }
+    ]
+  }
+]
