@@ -241,7 +241,7 @@ async function readRootBundleProposer(
  * With no restricted destination there is nothing to gate, so nothing blocks a
  * transfer.
  */
-async function readCanTransferToRestrictedDestination(
+export async function readCanTransferToRestrictedDestination(
   provider: CallProvider,
   token: string,
   holder: string,

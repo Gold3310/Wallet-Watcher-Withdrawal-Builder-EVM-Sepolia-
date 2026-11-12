@@ -12,6 +12,7 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Asset reporting: native and ERC-20 balances across every wallet, with totals
 - Sole-owner access control: one address, enforced at boot and on every request
 - Runs on Sepolia or mainnet, with per-chain guardrails when funds are real
+- Batch wallet sweep (`npm run wallet:sweep` / `POST /withdrawals/sweep`) to unwrap wrapped ETH, transfer ERC-20s, and sweep remaining ETH to one destination
 - Offline verification of decoded Aragon governance payloads (EVMScripts) against their raw bytes
 - Unit tests for wallet derivation, transaction building, permissions and network config
 
@@ -517,6 +518,42 @@ Example response (`broadcast: false`):
   }
 }
 ```
+
+### `POST /withdrawals/sweep` and `npm run wallet:sweep`
+
+Moves **remaining balances in the wallets derived from your `WALLET_MNEMONIC`**
+(`0..WALLET_COUNT-1`) to a single destination address. Plans everything first and
+sends nothing unless `broadcast: true` (or `--broadcast` on the CLI).
+
+```bash
+# Plan across all wallets (reads live balances, sends nothing)
+npm run wallet:sweep -- --to 0xNewDestination...
+
+# Unwrap wrapped ETH, transfer any other ERC-20s, and sweep all ETH for real
+npm run wallet:sweep -- --to 0xNewDestination... --unwrap --broadcast
+```
+
+Or over HTTP (requires bearer auth + `Idempotency-Key` when `broadcast: true`):
+
+```bash
+curl -s localhost:3000/withdrawals/sweep \
+  -H "Authorization: Bearer $OWNER_SECRET" \
+  -H "Idempotency-Key: sweep-1" \
+  -H 'Content-Type: application/json' \
+  -d '{"toAddress":"0xNewDestination...","unwrap":true,"broadcast":true}'
+```
+
+Within each wallet, steps execute in order:
+
+1. **Unwrap** (`withdraw(balance)`), when `unwrap: true` / `--unwrap` or `--unwrap-token` is passed. Refuses to waste gas when the contract's ETH reserve cannot cover the batch.
+2. **Transfer ERC-20s** (`transfer(toAddress, balance)`) for swept tokens not unwrapped (defaults to `TRACKED_CONTRACT`; pass `--token` or `--eth-only` / `tokens: []` to override).
+3. **Sweep native ETH** (`balance - 21_000 * maxFeePerGas`), after waiting for prior token/unwrap steps to confirm when the provider supports it so unwrapped proceeds are included.
+
+What this enforces and cannot do:
+
+- **Guardrails run across every wallet before anything broadcasts.** Destination must not be `0x0`, must be permitted by `WITHDRAWAL_ALLOWLIST` (add your new wallet there first if an allowlist is set), and ETH amounts must stay within `MAINNET_MAX_TX_VALUE_WEI`, `WITHDRAWAL_MAX_VALUE_WEI`, and `WITHDRAWAL_MAX_PER_WINDOW_WEI`.
+- **Skips vs. blocks cleanly:** zero-balance wallets, dust below gas cost, and a wallet whose address already equals `toAddress` are skipped; gas-blocked token wallets are reported with their exact ETH shortfall instead of sending reverting transactions.
+- **Managed keys only:** this only moves funds held by wallets derived from your `WALLET_MNEMONIC`. It cannot reverse past transactions or move tokens held by external contracts or third-party addresses.
 
 ## Session permissions (ERC-7715)
 
@@ -1286,6 +1323,7 @@ src/
 │   ├── ledger/             # Outflow recording
 │   ├── permissions/        # ERC-7715 grant/redeem + encoding
 │   ├── governance/         # Aragon EVMScript parsing + decoded-payload checks
+│   ├── sweep/              # Plan-first multi-wallet token + ETH sweep
 │   └── withdrawal/         # Tx build/sign/broadcast
 ├── infra/
 │   ├── db/                 # SQLite persistence
