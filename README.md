@@ -8,6 +8,7 @@ A Node.js + TypeScript custody backend slice for **Ethereum Sepolia**. The servi
 - Balance polling against Sepolia with persisted balances (SQLite)
 - Balance-change ledger (inflows from tracking, outflows only on broadcast)
 - REST API for wallet balances and withdrawals
+- `standard-v1` Merkle snapshot processing: whole-tree withdrawals with per-vault fee breakdowns
 - ERC-7715 session permissions (grant, inspect, revoke, redeem) with expiry and spending policies
 - Asset reporting: native and ERC-20 balances across every wallet, with totals
 - Sole-owner access control: one address, enforced at boot and on every request
@@ -515,6 +516,120 @@ Example response (`broadcast: false`):
     }
   }
 }
+```
+
+### `POST /withdrawals/snapshot` — a `standard-v1` Merkle snapshot
+
+Processes a whole `standard-v1` tree in one request instead of one vault at a
+time. The body is the tree as it was produced:
+
+```json
+{
+  "broadcast": false,
+  "snapshot": {
+    "format": "standard-v1",
+    "refSlot": "0x1234…",
+    "blockHash": "0xf2f9…",
+    "blockNumber": 26398720,
+    "timestamp": 1794484811,
+    "prevTreeCID": "QmPreviousTreeCIDHash1234567890",
+    "leafEncoding": ["address", "uint256", "uint256", "uint256", "uint256", "uint256"],
+    "extraValues": {
+      "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
+        "inOutDelta": "10000000000000000",
+        "prevFee": "500000000000000",
+        "infraFee": "100000000000000",
+        "liquidityFee": "200000000000000",
+        "reservationFee": "50000000000000"
+      }
+    },
+    "values": [
+      ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+       "1000000000000000000", "100000000000000000", "500000000000000000",
+       "1000000000000000000", "100000000000000000"]
+    ],
+    "leafIndexToData": { "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": 0 }
+  }
+}
+```
+
+Each leaf is `[vault address, total value, fee, liability shares, max liability
+shares, slashing reserve]`. The amount paid out is:
+
+```text
+totalValue − fee − liabilityShares − slashingReserve
+           − (infraFee + liquidityFee + reservationFee)
+```
+
+- **The vault address is the paying wallet.** `fromWalletIndex` is resolved by
+  address against the wallets derived from `WALLET_MNEMONIC`; it is never
+  guessed. A leaf whose address is not one of those wallets is reported in
+  `skipped` with `reason: "not-a-wallet"` and no transaction is built for it,
+  because paying one vault out of another vault's balance is the one mistake
+  this must not make.
+- `inOutDelta` and `prevFee` are reported per entry but **not** deducted a second
+  time — `prevFee` is already accounted for in `fee`.
+- `broadcast` defaults to **`false`**: the full plan comes back with every
+  deduction broken out and not a single signature.
+- `broadcast: true` requires an `Idempotency-Key` header, like `POST /withdrawals`.
+- A leaf that spends more than its total value is a **400**, not a zero payout;
+  an inconsistent snapshot is not silently rounded down.
+- `blockNumber`, `blockHash` and `timestamp` are echoed in `block` so a run can be
+  tied back to the slot it was taken from.
+
+Response (abridged):
+
+```json
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "refSlot": "0x1234…",
+  "block": { "blockNumber": 26398720, "blockHash": "0xf2f9…", "timestamp": 1794484811 },
+  "executed": true,
+  "broadcast": false,
+  "totals": { "netWei": "140498475000000000000", "netEth": "140.498475" },
+  "entries": [
+    {
+      "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "treeIndex": 0,
+      "fromWalletIndex": 0,
+      "amountWei": "92999650000000000000",
+      "deductions": {
+        "totalValueWei": "100000000000000000000",
+        "feeWei": "1000000000000000000",
+        "liabilitySharesWei": "5000000000000000000",
+        "maxLiabilitySharesWei": "10000000000000000000",
+        "slashingReserveWei": "1000000000000000000",
+        "infraFeeWei": "100000000000000",
+        "liquidityFeeWei": "200000000000000",
+        "reservationFeeWei": "50000000000000"
+      }
+    }
+  ],
+  "skipped": [
+    {
+      "address": "0xE2cC063DEc5685718Bd57aAC6AEE9941b25b7c37",
+      "netAmountWei": "92999650000000000000",
+      "reason": "not-a-wallet",
+      "detail": "0xE2cC… is not one of the derived wallets, so the snapshot cannot say which wallet would pay it"
+    }
+  ],
+  "results": []
+}
+```
+
+The same pipeline runs from the command line:
+
+```bash
+# dry run — prints each vault, its wallet and its net amount, signs nothing
+npm run withdraw:snapshot -- data/standard-v1-sample.json
+
+# sign, do not send
+npm run withdraw:snapshot -- data/standard-v1-sample.json --execute --no-broadcast
+
+# broadcast; the key is mandatory as a second guard against paying twice
+npm run withdraw:snapshot -- data/standard-v1-sample.json \
+  --execute --idempotency-key run-2026-11-12
 ```
 
 ## Session permissions (ERC-7715)

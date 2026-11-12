@@ -1,0 +1,87 @@
+{
+  "format": "standard-v1",
+  "tree": [],
+  "refSlot": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "blockHash": "0xf2f9057f5a232ced2a194d954886d5881457d44298850105e2e48011eff0217b",
+  "blockNumber": 26398720,
+  "timestamp": 1794484811,
+  "prevTreeCID": "QmPreviousTreeCIDHash1234567890",
+  "leafEncoding": [
+    "address",
+    "uint256",
+    "uint256",
+    "uint256",
+    "uint256",
+    "uint256"
+  ],
+  "extraValues": {
+    "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
+      "inOutDelta": "10000000000000000",
+      "prevFee": "500000000000000",
+      "infraFee": "100000000000000",
+      "liquidityFee": "200000000000000",
+      "reservationFee": "50000000000000"
+    },
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": {
+      "inOutDelta": "5000000000000000",
+      "prevFee": "250000000000000",
+      "infraFee": "50000000000000",
+      "liquidityFee": "100000000000000",
+      "reservationFee": "25000000000000"
+    },
+    "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC": {
+      "inOutDelta": "0",
+      "prevFee": "0",
+      "infraFee": "1000000000000000",
+      "liquidityFee": "0",
+      "reservationFee": "0"
+    },
+    "0xE2cC063DEc5685718Bd57aAC6AEE9941b25b7c37": {
+      "inOutDelta": "10000000000000000",
+      "prevFee": "500000000000000",
+      "infraFee": "100000000000000",
+      "liquidityFee": "200000000000000",
+      "reservationFee": "50000000000000"
+    }
+  },
+  "values": [
+    [
+      "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "100000000000000000000",
+      "1000000000000000000",
+      "5000000000000000000",
+      "10000000000000000000",
+      "1000000000000000000"
+    ],
+    [
+      "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "50000000000000000000",
+      "500000000000000000",
+      "2500000000000000000",
+      "5000000000000000000",
+      "500000000000000000"
+    ],
+    [
+      "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "1000000000000000000",
+      "0",
+      "0",
+      "0",
+      "0"
+    ],
+    [
+      "0xE2cC063DEc5685718Bd57aAC6AEE9941b25b7c37",
+      "100000000000000000000",
+      "1000000000000000000",
+      "5000000000000000000",
+      "10000000000000000000",
+      "1000000000000000000"
+    ]
+  ],
+  "leafIndexToData": {
+    "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": 0,
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": 12,
+    "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC": 27,
+    "0xE2cC063DEc5685718Bd57aAC6AEE9941b25b7c37": 34
+  }
+}

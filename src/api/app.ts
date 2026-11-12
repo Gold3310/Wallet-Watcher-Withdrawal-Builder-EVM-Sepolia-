@@ -3,6 +3,7 @@ import { authenticate, authorizeOwner } from "./middleware/auth.js";
 import { BadRequestError } from "../util/errors.js";
 import { assetsRouter } from "./routes/assets.js";
 import { permissionsRouter } from "./routes/permissions.js";
+import { snapshotRouter } from "./routes/snapshot.js";
 import { walletsRouter } from "./routes/wallets.js";
 import { withdrawalsRouter } from "./routes/withdrawals.js";
 
@@ -23,6 +24,7 @@ export function createApp() {
   app.use("/assets", assetsRouter);
   app.use("/permissions", permissionsRouter);
   app.use("/wallets", walletsRouter);
+  app.use("/withdrawals/snapshot", snapshotRouter);
   app.use("/withdrawals", withdrawalsRouter);
 
   app.use(

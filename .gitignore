@@ -3,6 +3,9 @@ dist/
 .env
 *.db
 *.db-journal
+
+# Snapshot runs are operator output, not fixtures.
+data/snapshots/
 coverage/
 
 # Derived wallet private keys. Never commit these.

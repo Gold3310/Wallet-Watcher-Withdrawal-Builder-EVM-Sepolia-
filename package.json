@@ -11,6 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "withdraw:snapshot": "tsx scripts/process-snapshot.ts",
     "verify:events": "tsx scripts/verify-events.ts",
     "wallet:derive": "tsx scripts/derive-wallet.ts",
     "token:compile": "tsx scripts/compile-token.ts",
